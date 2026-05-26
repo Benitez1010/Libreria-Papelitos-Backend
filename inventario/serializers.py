@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Categoria
+from .models import Categoria, Producto
 
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -21,3 +21,28 @@ class CategoriaSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Esta categoría ya se encuentra registrada.")
             
         return nombre_limpio
+    
+class ProductoSerializer(serializers.ModelSerializer):
+    # Mostramos el nombre de la categoría en las respuestas de lectura
+    categoria_nombre = serializers.ReadOnlyField(source='categoria.nombre')
+
+    class Meta:
+        model = Producto
+        fields = ['id', 'nombre', 'categoria', 'categoria_nombre', 'stock_bodega', 'stock_vitrina', 'stock_minimo', 'stock_total']
+
+    def validate(self, data):
+        nombre = data.get('nombre')
+        categoria = data.get('categoria')
+
+        # Ignoramos la validación si estamos editando un producto existente
+        if not self.instance:
+            # Criterio de Aceptación: Validar la unicidad (nombre + categoría)
+            producto_existente = Producto.objects.filter(nombre__iexact=nombre, categoria=categoria).first()
+            if producto_existente:
+                # Levantamos un error personalizado que el Frontend pueda interpretar como una "sugerencia"
+                raise serializers.ValidationError({
+                    "code": "PRODUCTO_DUPLICADO",
+                    "message": f"El producto '{nombre}' ya existe en esta categoría. ¿Deseas ir a actualizar su stock?",
+                    "producto_id": producto_existente.id
+                })
+        return data
