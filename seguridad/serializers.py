@@ -22,8 +22,15 @@ class LoginSerializer(serializers.Serializer):
                 raise serializers.ValidationError('Credenciales inválidas, intente nuevamente.')
         else:
             raise serializers.ValidationError('Debe proporcionar usuario y contraseña.')
-        
+
+
 class UsuarioSerializer(serializers.ModelSerializer):
+    rol_display = serializers.CharField(source='get_rol_display', read_only=True)
+    estado = serializers.SerializerMethodField()
+
     class Meta:
         model = Usuario
-        fields = ['id', 'username', 'email', 'rol', 'first_name', 'last_name']
+        fields = ['id', 'username', 'email', 'rol', 'rol_display', 'is_active', 'estado', 'date_joined']
+
+    def get_estado(self, obj):
+        return 'Activo' if obj.is_active else 'Inactivo'
