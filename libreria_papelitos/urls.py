@@ -21,4 +21,5 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     # Enlazamos el archivo de urls interno de la aplicación
     path('api/', include('inventario.urls')),
+    path('api/', include('seguridad.urls')), 
 ]
