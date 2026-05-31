@@ -3,8 +3,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import IsAuthenticated
-from .serializers import LoginSerializer, UsuarioSerializer
+from .serializers import LoginSerializer, UsuarioSerializer, RegistroUsuarioSerializer
 from .models import Usuario
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
 
 
 class LoginView(APIView):
@@ -51,21 +53,18 @@ class DesactivarUsuarioView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Validación: no puede desactivarse a sí mismo
         if request.user.id == usuario.id:
             return Response(
                 {'error': 'No puede desactivar su propia cuenta.'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Validación: no puede desactivar a otro administrador
         if usuario.rol == Usuario.Roles.ADMINISTRADOR and request.user.id != usuario.id:
             return Response(
                 {'error': 'No puede desactivar a otro administrador.'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Desactivar usuario (baja lógica)
         usuario.is_active = False
         usuario.save()
 
@@ -87,7 +86,6 @@ class ReactivarUsuarioView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Reactivar usuario
         usuario.is_active = True
         usuario.save()
 
@@ -95,3 +93,21 @@ class ReactivarUsuarioView(APIView):
             'mensaje': f'Usuario {usuario.username} reactivado exitosamente.',
             'usuario': UsuarioSerializer(usuario).data
         }, status=status.HTTP_200_OK)
+
+
+class RegistroUsuarioView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # Solo administradores pueden crear usuarios
+        if request.user.rol != Usuario.Roles.ADMINISTRADOR:
+            raise PermissionDenied('Solo los administradores pueden registrar nuevos usuarios.')
+
+        serializer = RegistroUsuarioSerializer(data=request.data)
+        if serializer.is_valid():
+            usuario = serializer.save()
+            return Response({
+                'mensaje': 'Usuario creado con éxito.',
+                'usuario': UsuarioSerializer(usuario).data
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
