@@ -72,6 +72,7 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 f'Credenciales inválidas. Le quedan {intentos_restantes} intentos antes del bloqueo.')
 
+
 class UsuarioSerializer(serializers.ModelSerializer):
     rol_display = serializers.CharField(source='get_rol_display', read_only=True)
     estado = serializers.SerializerMethodField()
@@ -116,13 +117,28 @@ class RegistroUsuarioSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
+        # 1. Definir permisos por defecto
+        configuracion_por_defecto = {
+            "articulos": {"master": True, "agregar": False, "editar": False, "eliminar": False},
+            "categorias": {"master": True, "agregar": False, "editar": False, "eliminar": False},
+            "almacenamiento": {"master": True, "agregar": False, "editar": False, "eliminar": False},
+            "movimientos": {"master": True, "agregar": False, "editar": False, "eliminar": False},
+            "control_inventario": {"master": False, "agregar": False, "editar": False, "eliminar": False},
+            "usuarios": {"master": False, "agregar": False, "editar": False, "eliminar": False},
+            "roles": {"master": False, "agregar": False, "editar": False, "eliminar": False},
+            "acceso_rol": {"master": False, "agregar": False, "editar": False, "eliminar": False}
+        }
+
         first_name = validated_data.pop('first_name', '')
         password = validated_data.pop('password')
+        
+        # 2. Crear usuario pasando la configuración por defecto
         user = Usuario.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
             rol=validated_data['rol'],
             first_name=first_name,
-            password=password
+            password=password,
+            configuracion_accesos=configuracion_por_defecto
         )
         return user
