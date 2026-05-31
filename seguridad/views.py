@@ -5,7 +5,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.permissions import IsAuthenticated
 from .serializers import LoginSerializer, UsuarioSerializer
 from .models import Usuario
-
+from django.shortcuts import get_object_or_404 # <--- Agregamos esta importación
 
 class LoginView(APIView):
     def post(self, request):
@@ -13,11 +13,16 @@ class LoginView(APIView):
         if serializer.is_valid():
             user = serializer.validated_data['user']
             token, created = Token.objects.get_or_create(user=user)
+
+            # --- NUEVO: Recuperamos los permisos ---
+            permisos = user.configuracion_accesos if user.configuracion_accesos else {}
+
             return Response({
                 'token': token.key,
                 'user_id': user.id,
                 'username': user.username,
                 'rol': user.get_rol_display(),
+                'permisos': permisos # --- NUEVO: Enviamos los permisos ---
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -27,7 +32,10 @@ class UsuarioMeView(APIView):
 
     def get(self, request):
         serializer = UsuarioSerializer(request.user)
-        return Response(serializer.data)
+        # --- NUEVO: Adjuntamos los permisos al perfil ---
+        datos = serializer.data
+        datos['permisos'] = request.user.configuracion_accesos if request.user.configuracion_accesos else {}
+        return Response(datos)
 
 
 class UsuarioListView(APIView):
@@ -75,6 +83,7 @@ class DesactivarUsuarioView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+
 class ReactivarUsuarioView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -95,3 +104,20 @@ class ReactivarUsuarioView(APIView):
             'mensaje': f'Usuario {usuario.username} reactivado exitosamente.',
             'usuario': UsuarioSerializer(usuario).data
         }, status=status.HTTP_200_OK)
+    
+
+# --- NUEVA VISTA PARA LEER Y GUARDAR PERMISOS (Se agrega al final) ---
+class UsuarioPermisosView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        usuario = get_object_or_404(Usuario, pk=pk)
+        config = usuario.configuracion_accesos if usuario.configuracion_accesos else {}
+        return Response({"configuracion": config}, status=status.HTTP_200_OK)
+
+    def post(self, request, pk):
+        usuario = get_object_or_404(Usuario, pk=pk)
+        nueva_configuracion = request.data.get('configuracion', {})
+        usuario.configuracion_accesos = nueva_configuracion
+        usuario.save()
+        return Response({"mensaje": "Permisos guardados."}, status=status.HTTP_200_OK)
