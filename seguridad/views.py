@@ -3,10 +3,9 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
 from .serializers import LoginSerializer, UsuarioSerializer, RegistroUsuarioSerializer
 from .models import Usuario
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import PermissionDenied
 
 
 class LoginView(APIView):
@@ -99,7 +98,6 @@ class RegistroUsuarioView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        # Solo administradores pueden crear usuarios
         if request.user.rol != Usuario.Roles.ADMINISTRADOR:
             raise PermissionDenied('Solo los administradores pueden registrar nuevos usuarios.')
 
@@ -111,3 +109,19 @@ class RegistroUsuarioView(APIView):
                 'usuario': UsuarioSerializer(usuario).data
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UsuarioPermisosView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        usuario = Usuario.objects.get(pk=pk)
+        config = usuario.configuracion_accesos if usuario.configuracion_accesos else {}
+        return Response({"configuracion": config}, status=status.HTTP_200_OK)
+
+    def post(self, request, pk):
+        usuario = Usuario.objects.get(pk=pk)
+        nueva_configuracion = request.data.get('configuracion', {})
+        usuario.configuracion_accesos = nueva_configuracion
+        usuario.save()
+        return Response({"mensaje": "Permisos guardados."}, status=status.HTTP_200_OK)

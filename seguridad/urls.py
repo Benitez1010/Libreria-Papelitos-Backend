@@ -1,7 +1,8 @@
 from django.urls import path
 from .views import (
     LoginView, UsuarioMeView, UsuarioListView, 
-    DesactivarUsuarioView, ReactivarUsuarioView, RegistroUsuarioView
+    DesactivarUsuarioView, ReactivarUsuarioView, RegistroUsuarioView,
+    UsuarioPermisosView
 )
 
 urlpatterns = [
@@ -11,4 +12,5 @@ urlpatterns = [
     path('usuarios/<int:pk>/desactivar/', DesactivarUsuarioView.as_view(), name='usuarios-desactivar'),
     path('usuarios/<int:pk>/reactivar/', ReactivarUsuarioView.as_view(), name='usuarios-reactivar'),
     path('usuarios/registrar/', RegistroUsuarioView.as_view(), name='usuarios-registrar'),
+    path('usuarios/<int:pk>/permisos/', UsuarioPermisosView.as_view(), name='usuarios-permisos'),
 ]
