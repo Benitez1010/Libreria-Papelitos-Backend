@@ -132,8 +132,14 @@ class MovimientoInventario(models.Model):
                 self.producto.stock_vitrina -= self.cantidad
                 
         elif self.tipo == self.TipoMovimiento.TRASLADO:
-            self.producto.stock_bodega -= self.cantidad
-            self.producto.stock_vitrina += self.cantidad
+            if self.origen == self.Ubicacion.BODEGA and self.destino == self.Ubicacion.VITRINA:
+                self.producto.stock_bodega -= self.cantidad
+                self.producto.stock_vitrina += self.cantidad
+            elif self.origen == self.Ubicacion.VITRINA and self.destino == self.Ubicacion.BODEGA:
+                self.producto.stock_vitrina -= self.cantidad
+                self.producto.stock_bodega += self.cantidad
+            else:
+                raise ValidationError("Para un traslado, el origen y destino deben ser BODEGA y VITRINA de forma cruzada.")
 
         elif self.tipo == self.TipoMovimiento.CORRECCION:
             # INV-13: El ajuste administrativo permite tanto sumar como restar a conveniencia
