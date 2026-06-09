@@ -76,11 +76,12 @@ class LoginSerializer(serializers.Serializer):
 class UsuarioSerializer(serializers.ModelSerializer):
     rol_display = serializers.CharField(source='get_rol_display', read_only=True)
     estado = serializers.SerializerMethodField()
-    area_display = serializers.CharField(source='get_area_display', read_only=True) #Nuevo campo para mostrar el nombre legible del área para acceso roles y vistas.
+    area_display = serializers.CharField(source='get_area_display', read_only=True) #campo para mostrar el nombre legible del área para acceso roles y vistas.
+    nombre_completo = serializers.CharField(source='first_name', read_only=True)
 
     class Meta:
         model = Usuario
-        fields = ['id', 'username', 'email', 'rol', 'rol_display',
+        fields = ['id', 'username','nombre_completo', 'email', 'rol', 'rol_display',
                    'area', 'area_display', 'is_active', 'estado', 'date_joined']
 
     def get_estado(self, obj):
