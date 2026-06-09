@@ -100,18 +100,3 @@ class RegistroUsuarioView(APIView):
                 'usuario': UsuarioSerializer(usuario).data
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-class UsuarioPermisosView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, pk):
-        usuario = Usuario.objects.get(pk=pk)
-        config = usuario.configuracion_accesos if usuario.configuracion_accesos else {}
-        return Response({"configuracion": config}, status=status.HTTP_200_OK)
-
-    def post(self, request, pk):
-        usuario = Usuario.objects.get(pk=pk)
-        nueva_configuracion = request.data.get('configuracion', {})
-        usuario.configuracion_accesos = nueva_configuracion
-        usuario.save()
-        return Response({"mensaje": "Permisos guardados."}, status=status.HTTP_200_OK)
