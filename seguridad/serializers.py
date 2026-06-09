@@ -88,6 +88,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
 
 
 class RegistroUsuarioSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(required=True, max_length=150, validators=[])
     password = serializers.CharField(
         write_only=True, 
         min_length=8,
