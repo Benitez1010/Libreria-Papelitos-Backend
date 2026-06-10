@@ -7,7 +7,7 @@ class CategoriaSerializer(serializers.ModelSerializer):
         fields = ['id', 'nombre']
 
     def validate_nombre(self, value):
-        # 1. Limpiar espacios extras en los extremos
+      
         nombre_limpio = value.strip().upper()
         
         # 2. Validar que no se envíe un campo vacío o solo con espacios
