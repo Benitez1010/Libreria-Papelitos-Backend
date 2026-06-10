@@ -59,33 +59,59 @@ class Usuario(AbstractUser):
     def __str__(self):
         return f"{self.username} - {self.get_rol_display()}"
     
-    
     def save(self, *args, **kwargs):
         """
         Sobrescribimos el método save para actualizar automáticamente los permisos 
         en la estructura JSON que lee React cada vez que se crea o modifica un usuario.
         """
-        # 1. Identificamos el tipo de rol según sus funciones (operativo o administrativo)
-        es_operativo = self.rol in [self.Roles.OPERADOR_BODEGA, self.Roles.OPERADOR_CAJA]
+        # 1. Definimos lógica de roles
         es_admin = self.rol == self.Roles.ADMINISTRADOR
+        es_bodega = self.rol == self.Roles.OPERADOR_BODEGA
+        # es_caja = self.rol == self.Roles.OPERADOR_CAJA # Ya implícito si no es admin ni bodega
 
-        # 2. Asignamos la matriz de permisos de forma automática según el rol
-        # NOTA: Sincronizado como 'productos' para que encaje directamente con el frontend
+        # 2. Roles con permiso de agregar productos
+        puede_agregar_productos = es_admin or es_bodega
+
+        # 3. Asignamos la matriz de permisos
         self.configuracion_accesos = {
             # Módulos de Inventario General
-            "productos": {"master": True, "agregar": not es_operativo, "editar": not es_operativo, "eliminar": not es_operativo},
-            "categorias": {"master": True, "agregar": not es_operativo, "editar": not es_operativo, "eliminar": not es_operativo},
-            "almacenamiento": {"master": True, "agregar": not es_operativo, "editar": not es_operativo, "eliminar": not es_operativo},
-            # Módulo de Movimientos: Los operadores pueden agregar pero no alterar registros existentes
-            "movimientos": {"master": True, "agregar": True, "editar": not es_operativo, "eliminar": not es_operativo},
-            "control_inventario": {"master": True, "agregar": not es_operativo, "editar": not es_operativo, "eliminar": not es_operativo},
+            "productos": {
+                "master": True, 
+                "agregar": puede_agregar_productos, 
+                "editar": puede_agregar_productos, 
+                "eliminar": es_admin
+            },
+            "categorias": {
+                "master": True, 
+                "agregar": es_admin, 
+                "editar": es_admin, 
+                "eliminar": es_admin
+            },
+            "almacenamiento": {
+                "master": True, 
+                "agregar": es_admin, 
+                "editar": es_admin, 
+                "eliminar": es_admin
+            },
+            # Módulo de Movimientos
+            "movimientos": {
+                "master": True, 
+                "agregar": True, 
+                "editar": es_admin, 
+                "eliminar": es_admin
+            },
+            "control_inventario": {
+                "master": True, 
+                "agregar": es_admin, 
+                "editar": es_admin, 
+                "eliminar": es_admin
+            },
             
-            # Módulos de Seguridad: Solo el administrador tiene acceso total, los operadores no pueden acceder a esta sección
+            # Módulos de Seguridad: Solo el administrador tiene acceso total
             "usuarios": {"master": es_admin, "agregar": es_admin, "editar": es_admin, "eliminar": es_admin},
             "roles": {"master": es_admin, "agregar": es_admin, "editar": es_admin, "eliminar": es_admin},
             "acceso_rol": {"master": es_admin, "agregar": es_admin, "editar": es_admin, "eliminar": es_admin}
         }
 
-        # Guarda definitivamente los datos en la base de datos llamando al método original de Django
+        # 4. Guarda definitivamente los datos en la base de datos
         super().save(*args, **kwargs)
-    
