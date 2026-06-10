@@ -100,3 +100,21 @@ class RegistroUsuarioView(APIView):
                 'usuario': UsuarioSerializer(usuario).data
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+# VISTA PARA CAMBIAR EL ROL DE UN USUARIO (Y ACTUALIZAR SUS PERMISOS AUTOMÁTICAMENTE)
+class CambiarRolView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        if request.user.rol != Usuario.Roles.ADMINISTRADOR:
+            return Response({'error': 'No tienes permisos para realizar esta acción.'}, status=status.STATUS_403_FORBIDDEN)
+            
+        usuario = get_object_or_404(Usuario, pk=pk)
+        nuevo_rol = request.data.get('rol')
+
+        if not nuevo_rol or nuevo_rol not in Usuario.Roles.values:
+            return Response({'error': 'Rol inválido o no proporcionado.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        usuario.rol = nuevo_rol
+        usuario.save() # Dispara de forma automática la lógica de permisos del modelo
+        return Response({'mensaje': 'Rol y permisos actualizados correctamente.'}, status=status.HTTP_200_OK)

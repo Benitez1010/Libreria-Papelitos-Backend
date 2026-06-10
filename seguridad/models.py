@@ -27,7 +27,7 @@ class Usuario(AbstractUser):
         default=Areas.BODEGA)
 
     # =========================================================================
-    # CAMPOS PARA BLOQUEO TRAS INTENTOS FALLIDOS (FUTURA IMPLEMENTACIÓN) 
+    # CAMPOS PARA BLOQUEO TRAS INTENTOS FALLIDOS 
     # =========================================================================
     intentos_fallidos = models.PositiveIntegerField(
         default=0,
@@ -50,4 +50,27 @@ class Usuario(AbstractUser):
 
     def __str__(self):
         return f"{self.username} - {self.get_rol_display()}"
+    
+    # Sobrescribimos el método save para actualizar automáticamente los permisos según el rol asignado
+    def save(self, *args, **kwargs):
+        # 1. Definimos si es un rol operativo (Bodega o Caja)
+        es_operativo = self.rol in [self.Roles.OPERADOR_BODEGA, self.Roles.OPERADOR_CAJA]
+        es_admin = self.rol == self.Roles.ADMINISTRADOR
+
+        # 2. Reconstruimos los permisos automáticamente al guardar
+        # IMPORTANTE: Cambiado 'articulos' a 'productos' para sincronizarlo con tu Frontend
+        self.configuracion_accesos = {
+            "productos": {"master": True, "agregar": not es_operativo, "editar": not es_operativo, "eliminar": not es_operativo},
+            "categorias": {"master": True, "agregar": not es_operativo, "editar": not es_operativo, "eliminar": not es_operativo},
+            "almacenamiento": {"master": True, "agregar": not es_operativo, "editar": not es_operativo, "eliminar": not es_operativo},
+            "movimientos": {"master": True, "agregar": True, "editar": not es_operativo, "eliminar": not es_operativo},
+            "control_inventario": {"master": True, "agregar": not es_operativo, "editar": not es_operativo, "eliminar": not es_operativo},
+            
+            # Configuración administrativa protegida
+            "usuarios": {"master": es_admin, "agregar": es_admin, "editar": es_admin, "eliminar": es_admin},
+            "roles": {"master": es_admin, "agregar": es_admin, "editar": es_admin, "eliminar": es_admin},
+            "acceso_rol": {"master": es_admin, "agregar": es_admin, "editar": es_admin, "eliminar": es_admin}
+        }
+        
+        super().save(*args, **kwargs)
     

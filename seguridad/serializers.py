@@ -119,36 +119,15 @@ class RegistroUsuarioSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        rol = validated_data.get('rol')
-        
-        # 1. Definir lógica de permisos según el rol
-        # Definimos si es operativo (Bodega o Caja)
-        es_operativo = rol in ['BODEGA', 'CAJA']
-        
-        configuracion_por_defecto = {
-            # Gestión Administrativa: True para todos (Admin y Operativos)
-            "articulos": {"master": True, "agregar": not es_operativo, "editar": not es_operativo, "eliminar": not es_operativo},
-            "categorias": {"master": True, "agregar": not es_operativo, "editar": not es_operativo, "eliminar": not es_operativo},
-            "almacenamiento": {"master": True, "agregar": not es_operativo, "editar": not es_operativo, "eliminar": not es_operativo},
-            "movimientos": {"master": True, "agregar": True, "editar": not es_operativo, "eliminar": not es_operativo},
-            "control_inventario": {"master": True, "agregar": not es_operativo, "editar": not es_operativo, "eliminar": not es_operativo},
-            
-            # Configuración: SOLO para Admin
-            "usuarios": {"master": False, "agregar": False, "editar": False, "eliminar": False},
-            "roles": {"master": False, "agregar": False, "editar": False, "eliminar": False},
-            "acceso_rol": {"master": False, "agregar": False, "editar": False, "eliminar": False}
-        }
-
         first_name = validated_data.pop('first_name', '')
         password = validated_data.pop('password')
         
-        # 2. Crear usuario
+        # El modelo genera automáticamente la configuracion_accesos gracias al método save()
         user = Usuario.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
-            rol=rol,
+            rol=validated_data['rol'],
             first_name=first_name,
-            password=password,
-            configuracion_accesos=configuracion_por_defecto
+            password=password
         )
         return user
