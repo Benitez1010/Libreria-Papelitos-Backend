@@ -37,22 +37,23 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
-    'rest_framework',
-    'rest_framework.authtoken',
-    'corsheaders',
 
-    # Módulos de la Librería Papelitos
-    'inventario',
-    'seguridad',
-    'alertas',
-    'reportes',
+    # --- LIBRERÍAS DE TERCEROS (Ecosistema API REST) ---
+    'rest_framework', #Framework principal para construir los Endpoints y Serializadores
+    'rest_framework.authtoken', # Sistema nativo de Django REST para autenticación basada en tokens de seguridad
+    'corsheaders', # Middleware encargado de mitigar restricciones de origen cruzado (CORS)
+
+    # --- MÓDULOS PROPIOS DEL SISTEMA (Librería Papelitos) ---
+    'inventario', # Manejo de productos, categorías y transacciones de stock
+    'seguridad', # Manejo de autenticación y autorización de usuarios
+    'alertas', # Sistema de notificaciones y alertas
+    'reportes', # Generación de reportes y estadísticas
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware', # Habilitado arriba en la lista para interceptar peticiones CORS antes de procesar rutas
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -85,7 +86,7 @@ WSGI_APPLICATION = 'libreria_papelitos.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
+        'ENGINE': 'django.db.backends.sqlite3', # Base de datos local ligera para el entorno de desarrollo actual
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
@@ -109,6 +110,9 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+#--- MODELO DE USUARIO PERSONALIZADO ---
+# Redirige el sistema de autenticación nativo de Django para que use nuestra clase Usuario
+# definida dentro de la app seguridad, permitiendo extender campos personalizados (roles, etc.)
 AUTH_USER_MODEL = 'seguridad.Usuario'
 
 # Internationalization
@@ -136,9 +140,12 @@ CORS_ALLOWED_ORIGINS = [
 
 # Configuración de Django REST Framework
 REST_FRAMEWORK = {
+    # Define TokenAuthentication como mecanismo global para validar las credenciales de los usuarios en cada endpoint
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.TokenAuthentication',
     ],
+    # Permite el acceso abierto de manera predeterminada; las restricciones específicas por rol o sesión
+    # se aplican directamente en las vistas mediante permission_classes = [IsAuthenticated] o permisos personalizados según el caso
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
     ],

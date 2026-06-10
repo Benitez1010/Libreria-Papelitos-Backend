@@ -1,6 +1,10 @@
 from django.db import models
 
 class DestinatarioCorreo(models.Model):
+    """
+    Modelo que almacena la lista de correos electrónicos del personal
+    que debe ser notificado cuando un producto se quede sin existencias básicas.
+    """
     correo = models.EmailField(unique=True, help_text="Correo electrónico que recibirá las alertas de stock crítico.")
     activo = models.BooleanField(default=True, help_text="Permite activar o desactivar el envío global a este correo.")
 
@@ -12,7 +16,11 @@ class DestinatarioCorreo(models.Model):
 
 
 class HistorialAlerta(models.Model):
-    # models.CASCADE porque si se elimina el producto, sus alertas históricas pierden sentido
+    """
+    Modelo que registra cada evento en el que un producto cayó por debajo 
+    de su stock mínimo permitido, sirviendo como bitácora de control de inventario.
+    """
+    # Si se elimina un producto del catálogo, se borran automáticamente sus alertas pasadas (on_delete=models.CASCADE)
     producto = models.ForeignKey('inventario.Producto', on_delete=models.CASCADE, related_name='alertas_disparadas')
     saldo_momento = models.PositiveIntegerField(help_text="Stock total que tenía el artículo al momento de activarse la alerta.")
     fecha_hora = models.DateTimeField(auto_now_add=True, help_text="Fecha y hora exacta del disparo de la alerta.")

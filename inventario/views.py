@@ -11,6 +11,10 @@ from django.core.exceptions import ValidationError
 
 
 class CategoriaViewSet(viewsets.ModelViewSet):
+    """
+    Controlador CRUD completo para las categorías.
+    Centraliza las operaciones de listado, creación, edición y eliminación.
+    """
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
 
@@ -32,15 +36,21 @@ class CategoriaViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_400_BAD_REQUEST)
     
 class ProductoViewSet(viewsets.ModelViewSet):
+    """
+    Controlador CRUD completo para el catálogo de productos.
+    Incluye lógica de asistencia para inventario inicial y alertas preventivas de duplicados.
+    """
     queryset = Producto.objects.all()
     serializer_class = ProductoSerializer
 
     def create(self, request, *args, **kwargs):
+        """Maneja el registro de nuevos productos verificando que no existan previamente."""
         data = request.data.copy()
+        # Si el usuario ingresa una cantidad inicial, se asigna automáticamente como stock de Bodega
         if 'cantidad_inicial' in data:
             data['stock_bodega'] = data['cantidad_inicial']
 
-        # Criterio de Aceptación: Validar la unicidad ANTES de procesar
+        # Criterio de Aceptación: Validar si el artículo ya existe ignorando mayúsculas/minúsculas
         nombre = data.get('nombre', '')
         categoria_id = data.get('categoria')
         
@@ -72,16 +82,21 @@ class ProductoViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 class ProcesarMovimientoView(APIView):
-    # Forzamos seguridad por token y bloqueamos accesos a usuarios no logueados
+    """
+    Vista transaccional que procesa listas de productos facturados o trasladados desde React.
+    Garantiza consistencia en bloque, aplicando la regla de: 'O se guardan todos o ninguno'.
+    """
+    # Exige que las peticiones frontend incluyan el Token de sesión en las cabeceras HTTP
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         data = request.data
-        tipo_contexto = data.get('tipo_contexto') # venta, entrada, traslado, daño, correccion
+        tipo_contexto = data.get('tipo_contexto') # Define la operación: venta, entrada, traslado, daño, correccion
         justificacion = data.get('justificacion', '').strip()
         detalles = data.get('detalles', []) # Arreglo de productos elegidos en React
 
+        # Valida que la lista de productos no venga vacía
         if not detalles:
             return Response({
                 "success": False,
@@ -105,7 +120,8 @@ class ProcesarMovimientoView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # PROTECCIÓN EN BLOQUE ATÓMICO: Todo o nada
+            # --- PROTECCIÓN EN BLOQUE ATÓMICO ---
+            # Si ocurre un error en el producto número 10, se cancelan los 9 anteriores automáticamente
             with transaction.atomic():
                 movimientos_registrados = []
 
@@ -115,7 +131,7 @@ class ProcesarMovimientoView(APIView):
                     except Producto.DoesNotExist:
                         raise ValidationError(f"El producto con ID {item.get('producto_id')} no existe en el catálogo.")
 
-                    # Construimos la instancia del movimiento leyendo las variables enviadas por React
+                    # Mapea las variables estructuradas desde el formulario dinámico de React hacia el Modelo
                     movimiento = MovimientoInventario(
                         producto=producto,
                         tipo=tipo_movimiento_real,
@@ -126,10 +142,10 @@ class ProcesarMovimientoView(APIView):
                         usuario=request.user # Django extrae de forma segura el usuario del Token
                     )
                     
-                    # Ejecuta clean() y save() nativo (aquí restará o sumará stock y validará stock negativo)
+                    # Al invocar el save() se calculan los nuevos stocks y se verifican restricciones de inventario negativo
                     movimiento.save()
                     
-                    # Guardamos referencias para la respuesta del JSON informativo
+                    # Almacena de manera temporal la información para construir el JSON informativo de respuesta
                     movimientos_registrados.append({
                         "producto": producto.nombre,
                         "cantidad": movimiento.cantidad,
@@ -160,6 +176,7 @@ class ProcesarMovimientoView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
             
         except Exception as e:
+            # Control ante fallas inesperadas de infraestructura o base de datos
             return Response({
                 "success": False,
                 "message": f"Fallo crítico en el servidor: {str(e)}"

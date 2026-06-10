@@ -17,9 +17,13 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 
+# Lista de rutas globales del proyecto 'libreria_papelitos'
 urlpatterns = [
+    # Interfaz de administración nativa de Django para la gestión interna de datos por superusuarios
     path('admin/', admin.site.urls),
-    # Enlazamos el archivo de urls interno de la aplicación
-    path('api/', include('inventario.urls')),
-    path('api/', include('seguridad.urls')), 
+    # --- ENRUTAMIENTO CENTRALIZADO DE LA API REST ---
+    # Enlazamos los archivos de urls internos de cada aplicación del sistema.
+    # El uso del prefijo 'api/' unifica todos los endpoints bajo el mismo árbol jerárquico.
+    path('api/', include('inventario.urls')), # Endpoints del módulo de Inventario (productos, categorías, transacciones de stock, etc.)
+    path('api/', include('seguridad.urls')),  # Endpoints del módulo de Seguridad (autenticación, gestión de usuarios, etc.)
 ]

@@ -6,6 +6,10 @@ from .models import Usuario
 
 
 class LoginSerializer(serializers.Serializer):
+    """
+    Serializer encargado de procesar y validar las credenciales de inicio de sesión.
+    Incluye lógica para login mixto (username o email) y control de bloqueo temporal.
+    """
     username = serializers.CharField(required=True)
     password = serializers.CharField(required=True, write_only=True)
 
@@ -13,10 +17,11 @@ class LoginSerializer(serializers.Serializer):
         username_input = attrs.get('username')
         password = attrs.get('password')
 
+        # Validación inicial de campos vacíos
         if not username_input or not password:
             raise serializers.ValidationError('Debe proporcionar usuario y contraseña.')
 
-        # Detectar si es email o username
+        # Identifica si el usuario ingresó un correo electrónico o un nombre de usuario
         if '@' in username_input:
             try:
                 usuario = Usuario.objects.get(email=username_input)
@@ -26,7 +31,7 @@ class LoginSerializer(serializers.Serializer):
         else:
             username = username_input
 
-        # Buscar el usuario en la base de datos
+        # Busca la existencia del usuario en la base de datos
         try:
             usuario = Usuario.objects.get(username=username)
         except Usuario.DoesNotExist:
@@ -43,11 +48,11 @@ class LoginSerializer(serializers.Serializer):
                 f'Cuenta bloqueada por seguridad. Intente nuevamente en {segundos_restantes} segundos.'
             )
 
-        # Autenticar
+        # Intento de autenticación con el sistema interno de Django
         user = authenticate(username=username, password=password)
 
         if user:
-            # Login exitoso: resetear contador de intentos
+            # Login exitoso: Se limpia el historial de errores de logueo
             usuario.intentos_fallidos = 0
             usuario.bloqueado_hasta = None
             usuario.save()
@@ -55,7 +60,7 @@ class LoginSerializer(serializers.Serializer):
             attrs['user'] = user
             return attrs
         else:
-            # Login fallido: incrementar contador
+            # Login fallido: Se incrementa el contador de fallas consecutivas
             usuario.intentos_fallidos += 1
 
             # Si llega a 5 intentos, bloquear por 30 segundos
@@ -74,6 +79,11 @@ class LoginSerializer(serializers.Serializer):
 
 
 class UsuarioSerializer(serializers.ModelSerializer):
+    """
+    Serializer para consultar y listar la información de los usuarios.
+    Muestra los datos en formatos legibles listos para las tablas del Frontend.
+    """
+    # Muestra el nombre completo del rol y del área en lugar de sus códigos de base de datos
     rol_display = serializers.CharField(source='get_rol_display', read_only=True)
     estado = serializers.SerializerMethodField()
     area_display = serializers.CharField(source='get_area_display', read_only=True) #campo para mostrar el nombre legible del área para acceso roles y vistas.
@@ -89,6 +99,10 @@ class UsuarioSerializer(serializers.ModelSerializer):
 
 
 class RegistroUsuarioSerializer(serializers.ModelSerializer):
+    """
+    Serializer dedicado a la creación y alta de nuevos usuarios dentro del sistema.
+    Valida de forma estricta la unicidad de los datos personales.
+    """
     username = serializers.CharField(required=True, max_length=150, validators=[])
     password = serializers.CharField(
         write_only=True, 
@@ -97,12 +111,14 @@ class RegistroUsuarioSerializer(serializers.ModelSerializer):
             'min_length': 'La contraseña debe tener al menos 8 caracteres.'
         }
     )
+    # Mapea el campo personalizado 'nombre_completo' directamente hacia el 'first_name' nativo del modelo Usuario para mantener la compatibilidad con el sistema de autenticación de Django.
     nombre_completo = serializers.CharField(source='first_name', required=True)
 
     class Meta:
         model = Usuario
         fields = ['username', 'password', 'nombre_completo', 'email', 'rol']
 
+    # --- VALIDACIONES EN CALIENTE PARA EVITAR DATOS DUPLICADOS ---
     def validate_username(self, value):
         if Usuario.objects.filter(username=value).exists():
             raise serializers.ValidationError('Este nombre de usuario ya existe.')
@@ -119,6 +135,10 @@ class RegistroUsuarioSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
+        """
+        Ejecuta la creación física del registro utilizando el manejador 'create_user' 
+        de Django para aplicar correctamente el hash de seguridad a la contraseña.
+        """
         first_name = validated_data.pop('first_name', '')
         password = validated_data.pop('password')
         

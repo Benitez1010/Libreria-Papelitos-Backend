@@ -3,6 +3,10 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 
 class Categoria(models.Model):
+    """
+    Clase para clasificar los artículos del catálogo (Ej: Útiles, Oficina, Libros).
+    Garantiza que los nombres guarden consistencia visual y protege la integridad referencial.
+    """
     nombre = models.CharField(max_length=100, unique=True)
 
     class Meta:
@@ -14,7 +18,7 @@ class Categoria(models.Model):
             self.nombre = self.nombre.upper()
 
     def save(self, *args, **kwargs):
-        self.full_clean() 
+        self.full_clean()  # Fuerza la ejecución de clean() antes de guardar en la base de datos
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
@@ -28,6 +32,10 @@ class Categoria(models.Model):
 
 
 class Producto(models.Model):
+    """
+    Representa los artículos disponibles en la librería.
+    Lleva el control de existencias por separado (Bodega / Vitrina) y define límites de alertas.
+    """
     nombre = models.CharField(max_length=200)
     categoria = models.ForeignKey(Categoria, on_delete=models.PROTECT, related_name='productos')
     stock_bodega = models.PositiveIntegerField(default=0)
@@ -40,7 +48,7 @@ class Producto(models.Model):
     )
 
     class Meta:
-        unique_together = ('nombre', 'categoria')
+        unique_together = ('nombre', 'categoria') # Evita que se registre el mismo producto en la misma categoría
         db_table = 'productos'
 
     @property
@@ -67,6 +75,10 @@ class Producto(models.Model):
 
 
 class MovimientoInventario(models.Model):
+    """
+    Historial transaccional del inventario.
+    Registra cada entrada, salida, traslado o ajuste, descontando o sumando stock en tiempo real.
+    """
     class TipoMovimiento(models.TextChoices):
         ENTRADA = 'ENTRADA', 'Entrada de Mercadería'
         SALIDA = 'SALIDA', 'Salida (Despacho)'
@@ -117,20 +129,24 @@ class MovimientoInventario(models.Model):
 
     def save(self, *args, **kwargs):
         self.full_clean()
+
+        # --- LÓGICA TRANSACCIONAL: ACTUALIZACIÓN AUTOMÁTICA DE STOCKS ---
         
-        # --- LÓGICA TRANSACCIONAL DE INVENTARIO ---
+        # 1. ENTRADAS: Incrementan el saldo de la ubicación de destino seleccionada
         if self.tipo == self.TipoMovimiento.ENTRADA:
             if self.destino == self.Ubicacion.BODEGA:
                 self.producto.stock_bodega += self.cantidad
             elif self.destino == self.Ubicacion.VITRINA:
                 self.producto.stock_vitrina += self.cantidad
-                
+
+        # 2. SALIDAS O MERMAS: Disminuyen el saldo de la ubicación de origen seleccionada   
         elif self.tipo in [self.TipoMovimiento.SALIDA, self.TipoMovimiento.DAÑO]:
             if self.origen == self.Ubicacion.BODEGA:
                 self.producto.stock_bodega -= self.cantidad
             elif self.origen == self.Ubicacion.VITRINA:
                 self.producto.stock_vitrina -= self.cantidad
-                
+
+        # 3. TRASLADOS INTERNOS: Restan de una ubicación y suman en la otra simultáneamente  
         elif self.tipo == self.TipoMovimiento.TRASLADO:
             if self.origen == self.Ubicacion.BODEGA and self.destino == self.Ubicacion.VITRINA:
                 self.producto.stock_bodega -= self.cantidad
@@ -141,6 +157,7 @@ class MovimientoInventario(models.Model):
             else:
                 raise ValidationError("Para un traslado, el origen y destino deben ser BODEGA y VITRINA de forma cruzada.")
 
+        # 4. CORRECCIONES: Permiten ajustar inventarios sumando o restando según se indique en origen/destino
         elif self.tipo == self.TipoMovimiento.CORRECCION:
             # INV-13: El ajuste administrativo permite tanto sumar como restar a conveniencia
             # Se asume que el origen/destino indica si incrementa o decrementa la bodega/vitrina
@@ -153,5 +170,6 @@ class MovimientoInventario(models.Model):
             elif self.origen == self.Ubicacion.VITRINA:
                 self.producto.stock_vitrina -= self.cantidad
 
+        # Guarda los nuevos saldos calculados en el producto y luego registra el movimiento histórico
         self.producto.save()
         super().save(*args, **kwargs)
