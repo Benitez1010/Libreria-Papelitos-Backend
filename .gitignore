@@ -1,0 +1,14 @@
+# Python / Django
+venv/
+env/
+db.sqlite3
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Entorno local / Editores
+.env
+.vscode/
+.idea/
+*.log
