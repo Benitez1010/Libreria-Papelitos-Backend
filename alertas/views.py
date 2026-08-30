@@ -2,8 +2,8 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 from django.core.mail import send_mail
 from django.conf import settings
-from .models import DestinatarioCorreo
-from .serializers import DestinatarioCorreoSerializer
+from .models import DestinatarioCorreo, HistorialAlerta
+from .serializers import DestinatarioCorreoSerializer, HistorialAlertaSerializer
 
 class DestinatarioCorreoViewSet(viewsets.ModelViewSet):
     queryset = DestinatarioCorreo.objects.all()
@@ -34,3 +34,7 @@ class DestinatarioCorreoViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED, 
             headers=headers
         )
+
+class HistorialAlertaViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = HistorialAlerta.objects.all()
+    serializer_class = HistorialAlertaSerializer

@@ -27,7 +27,7 @@ class HistorialAlerta(models.Model):
     notificacion_enviada = models.BooleanField(default=False, help_text="Indica si el correo electrónico se envió con éxito.")
 
     class Meta:
-        ordering = ['-fecha_hora'] # Muestra siempre las alertas más recientes primero
+        ordering = ['-fecha_hora'] 
         get_latest_by = 'fecha_hora'
         db_table = 'historial_alertas'
 
