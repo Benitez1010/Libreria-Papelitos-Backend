@@ -150,3 +150,19 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',
     ],
 }
+
+import os
+from dotenv import load_dotenv
+
+# Esto busca tu archivo .env oculto y carga los valores en memoria
+load_dotenv() 
+
+# Configuración de conexión con Gmail
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+
+# En lugar de escribir la contraseña directamente aquí, Django la jala de tu archivo .env
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
