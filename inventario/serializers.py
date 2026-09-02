@@ -39,3 +39,9 @@ class ProductoSerializer(serializers.ModelSerializer):
         model = Producto
         # El campo 'categoria' recibe el ID al guardar, mientras que 'categoria_nombre' se usa para mostrar el texto al listar
         fields = ['id', 'nombre', 'categoria', 'categoria_nombre', 'stock_bodega', 'stock_vitrina', 'stock_minimo', 'stock_total']
+
+    # Validación estricta del backend para garantizar que el stock mínimo sea mayor a cero
+    def validate_stock_minimo(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Ingrese una cantidad numérica válida mayor a cero")
+        return value
