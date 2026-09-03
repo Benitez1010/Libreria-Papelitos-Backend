@@ -18,12 +18,10 @@ class CategoriaViewSet(viewsets.ModelViewSet):
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
 
-    # Redefinimos el método de creación para personalizar el mensaje de éxito del criterio de aceptación
     def create(self, request, *args, **kwargs):
         serializer = CategoriaSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
-            # Criterio de Aceptación: Mensaje de éxito explícito tras el guardado
             return Response({
                 "success": True,
                 "message": "Categoría registrada con éxito.",
@@ -34,6 +32,22 @@ class CategoriaViewSet(viewsets.ModelViewSet):
             "success": False,
             "errors": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    def destroy(self, request, *args, **kwargs):
+        """INV-03: Bloqueo de eliminación y captura de validación del modelo."""
+        instancia = self.get_object()
+        try:
+            instancia.delete()
+            return Response({
+                "success": True,
+                "message": "Categoría eliminada con éxito."
+            }, status=status.HTTP_200_OK)
+        except ValidationError as e:
+            mensaje = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({
+                "success": False,
+                "message": mensaje
+            }, status=status.HTTP_400_BAD_REQUEST)
     
 class ProductoViewSet(viewsets.ModelViewSet):
     """
