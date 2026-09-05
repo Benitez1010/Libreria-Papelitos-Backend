@@ -3,12 +3,10 @@ from django.utils import timezone
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from .models import Usuario
-
-
+import math
 class LoginSerializer(serializers.Serializer):
     """
     Serializer encargado de procesar y validar las credenciales de inicio de sesión.
-    Incluye lógica para login mixto (username o email) y control de bloqueo temporal.
     """
     username = serializers.CharField(required=True)
     password = serializers.CharField(required=True, write_only=True)
@@ -17,7 +15,7 @@ class LoginSerializer(serializers.Serializer):
         username_input = attrs.get('username')
         password = attrs.get('password')
 
-        # Validación inicial de campos vacíos
+        # Validación de campos obligatorios
         if not username_input or not password:
             raise serializers.ValidationError('Debe proporcionar usuario y contraseña.')
 
@@ -37,22 +35,24 @@ class LoginSerializer(serializers.Serializer):
         except Usuario.DoesNotExist:
             raise serializers.ValidationError('Credenciales inválidas, intente nuevamente.')
 
-        # ========== VERIFICAR PRIMERO SI ESTÁ DESACTIVADO ==========
+        # Verificar si la cuenta está desactivada administrativamente
         if not usuario.is_active:
             raise serializers.ValidationError('Su cuenta ha sido desactivada. Contacte al administrador para reactivarla.')
 
-        # Verificar si está bloqueado temporalmente
+        # Verificación de bloqueo activo con tiempo dinámico restante
         if usuario.bloqueado_hasta and usuario.bloqueado_hasta > timezone.now():
-            segundos_restantes = int((usuario.bloqueado_hasta - timezone.now()).total_seconds())
+            segundos_restantes = (usuario.bloqueado_hasta - timezone.now()).total_seconds()
+            minutos_restantes = max(1, math.ceil(segundos_restantes / 60))
+            unidad = "minuto" if minutos_restantes == 1 else "minutos"
             raise serializers.ValidationError(
-                f'Cuenta bloqueada por seguridad. Intente nuevamente en {segundos_restantes} segundos.'
+                f'Cuenta bloqueada temporalmente por seguridad. Intente nuevamente en {minutos_restantes} {unidad}'
             )
 
-        # Intento de autenticación con el sistema interno de Django
+        # Intento de autenticación con las credenciales ingresadas
         user = authenticate(username=username, password=password)
 
         if user:
-            # Login exitoso: Se limpia el historial de errores de logueo
+            # Login exitoso: se reinician contadores y penalizaciones
             usuario.intentos_fallidos = 0
             usuario.bloqueado_hasta = None
             usuario.save()
@@ -60,23 +60,24 @@ class LoginSerializer(serializers.Serializer):
             attrs['user'] = user
             return attrs
         else:
-            # Login fallido: Se incrementa el contador de fallas consecutivas
+            # Login fallido: incrementa contador
             usuario.intentos_fallidos += 1
 
-            # Si llega a 5 intentos, bloquear por 30 segundos
+            # Bloqueo temporal tras 5 intentos fallidos
             if usuario.intentos_fallidos >= 5:
-                usuario.bloqueado_hasta = timezone.now() + timedelta(seconds=30)
-                usuario.intentos_fallidos = 0  # Resetear para el próximo ciclo
+                usuario.bloqueado_hasta = timezone.now() + timedelta(minutes=15)
+                usuario.intentos_fallidos = 0
                 usuario.save()
+
                 raise serializers.ValidationError(
-                    'Demasiados intentos fallidos. Cuenta bloqueada por 30 segundos.'
+                    'Cuenta bloqueada temporalmente por seguridad. Intente nuevamente en 15 minutos'
                 )
 
             usuario.save()
             intentos_restantes = 5 - usuario.intentos_fallidos
             raise serializers.ValidationError(
-                f'Credenciales inválidas. Le quedan {intentos_restantes} intentos antes del bloqueo.')
-
+                f'Credenciales inválidas. Le quedan {intentos_restantes} intentos antes del bloqueo.'
+            )
 
 class UsuarioSerializer(serializers.ModelSerializer):
     """
