@@ -2,8 +2,12 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 from rest_framework import serializers
 from django.contrib.auth import authenticate
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import Usuario
 import math
+
+
 class LoginSerializer(serializers.Serializer):
     """
     Serializer encargado de procesar y validar las credenciales de inicio de sesión.
@@ -152,3 +156,45 @@ class RegistroUsuarioSerializer(serializers.ModelSerializer):
             password=password
         )
         return user
+
+#Para recuperear contraseña
+class SolicitudRecuperacionSerializer(serializers.Serializer):
+    """
+    Serializer encargado de recibir el correo para iniciar el proceso de recuperación.
+    Solo valida el formato; la existencia del usuario se resuelve en la vista para no
+    revelar si el correo está registrado en el sistema.
+    """
+    email = serializers.EmailField(
+        required=True,
+        error_messages={
+            'required': 'Debe proporcionar un correo electrónico.',
+            'invalid': 'Ingrese un correo electrónico válido.',
+            'blank': 'Debe proporcionar un correo electrónico.'
+        }
+    )
+
+
+class ConfirmarRecuperacionSerializer(serializers.Serializer):
+    """
+    Serializer encargado de validar el enlace de recuperación y la nueva contraseña.
+    Aplica las reglas de seguridad definidas en AUTH_PASSWORD_VALIDATORS.
+    """
+    uid = serializers.CharField(required=True)
+    token = serializers.CharField(required=True)
+    password = serializers.CharField(
+        required=True,
+        write_only=True,
+        min_length=8,
+        error_messages={
+            'min_length': 'La contraseña debe tener al menos 8 caracteres.',
+            'required': 'Debe proporcionar una nueva contraseña.',
+            'blank': 'Debe proporcionar una nueva contraseña.'
+        }
+    )
+
+    def validate_password(self, value):
+        try:
+            validate_password(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(list(e.messages))
+        return value 
