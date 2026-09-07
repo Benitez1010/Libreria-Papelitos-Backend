@@ -95,6 +95,43 @@ class ProductoViewSet(viewsets.ModelViewSet):
             "errors": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    def update(self, request, *args, **kwargs):
+        """INV-09: Edición de producto con validación de nombre duplicado."""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        
+        nombre = request.data.get('nombre', instance.nombre).strip()
+        categoria_id = request.data.get('categoria', instance.categoria_id)
+
+        # Validamos si ya existe otro producto con el mismo nombre y categoría
+        existe_duplicado = Producto.objects.filter(
+            nombre__iexact=nombre, 
+            categoria_id=categoria_id
+        ).exclude(id=instance.id).exists()
+
+        if existe_duplicado:
+            return Response({
+                "success": False,
+                "error_type": "PRODUCTO_DUPLICADO",
+                "nombre": [f"El producto '{nombre}' ya existe en esta categoría."],
+                "message": f"El producto '{nombre}' ya existe en esta categoría."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "success": True,
+                "message": "Producto actualizado con éxito.",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+
+        return Response({
+            "success": False,
+            "error_type": "VALIDATION_ERROR",
+            "errors": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
 class ProcesarMovimientoView(APIView):
     """
     Vista transaccional que procesa listas de productos facturados o trasladados desde React.

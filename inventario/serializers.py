@@ -45,3 +45,31 @@ class ProductoSerializer(serializers.ModelSerializer):
         if value <= 0:
             raise serializers.ValidationError("Ingrese una cantidad numérica válida mayor a cero")
         return value
+
+    def validate(self, data):
+        # Tomar nombre (nuevo o el actual)
+        nombre = data.get('nombre')
+        if not nombre and self.instance:
+            nombre = self.instance.nombre
+
+        # Tomar categoría (nueva o la actual)
+        categoria = data.get('categoria')
+        categoria_id = getattr(categoria, 'id', categoria)
+        if categoria_id is None and self.instance:
+            categoria_id = self.instance.categoria_id
+
+        if nombre and categoria_id:
+            nombre_limpio = nombre.strip()
+            data['nombre'] = nombre_limpio
+
+            # Validar duplicados ignorando mayúsculas/minúsculas dentro de la misma categoría
+            query = Producto.objects.filter(nombre__iexact=nombre_limpio, categoria_id=categoria_id)
+            if self.instance:
+                query = query.exclude(id=self.instance.id)
+
+            if query.exists():
+                raise serializers.ValidationError({
+                    "nombre": f"El producto '{nombre_limpio}' ya existe en esta categoría."
+                })
+
+        return data
