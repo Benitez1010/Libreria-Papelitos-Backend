@@ -3,25 +3,26 @@ from .models import Categoria, Producto
 
 class CategoriaSerializer(serializers.ModelSerializer):
     """
-    Serializer para el manejo de categorías.
-    Se encarga de transformar los datos para el listado, creación y edición,
-    aplicando reglas para evitar nombres duplicados o vacíos.
+    Controla los datos de las categorías al listar, crear o editar.
+    Asegura que no se guarden nombres vacíos ni repetidos.
     """
     class Meta:
         model = Categoria
         fields = ['id', 'nombre']
 
     def validate_nombre(self, value):
-        # 1. Limpia los espacios de los lados y transforma a mayúsculas para homogeneizar
+        # Quitamos espacios sobrantes en las orillas y pasamos a mayúsculas
+        # para que "Lápiz", " lápiz " y "LÁPIZ" se traten como lo mismo
         nombre_limpio = value.strip().upper()
         
-        # 2. Validar que no se envíe un campo vacío o solo con espacios
         if not nombre_limpio:
             raise serializers.ValidationError("El nombre de la categoría no puede estar vacío.")
 
-        # 3. Criterio de Aceptación: Validar que no se repitan nombres existentes en la base de datos
-        # Se obtiene el ID si se está editando (para no validarse contra sí mismo), si es nuevo se mantiene como None
+        # Si estamos editando, self.instance tiene la categoría actual.
+        # Guardamos su ID para no comparar la categoría contra sí misma.
         instance_id = self.instance.id if self.instance else None
+
+        # Buscamos si ya existe otra categoría con el mismo nombre
         if Categoria.objects.filter(nombre=nombre_limpio).exclude(id=instance_id).exists():
             raise serializers.ValidationError("Esta categoría ya se encuentra registrada.")
             
@@ -29,10 +30,11 @@ class CategoriaSerializer(serializers.ModelSerializer):
     
 class ProductoSerializer(serializers.ModelSerializer):
     """
-    Serializer para la gestión del catálogo de productos.
-    Mapea las existencias por ubicación y expone campos calculados listos para el Frontend.
+    Controla los datos de los productos, sus existencias por área
+    y valida que no haya dos productos iguales en la misma categoría.
     """
-    # Campo de solo lectura para mostrar el texto de la categoría en las tablas de React
+    # Trae directo el nombre del texto de la categoría para que la app que consuma
+    # la API no tenga que hacer otra petición solo para saber cómo se llama
     categoria_nombre = serializers.ReadOnlyField(source='categoria.nombre')
 
     class Meta:
@@ -40,30 +42,37 @@ class ProductoSerializer(serializers.ModelSerializer):
         # El campo 'categoria' recibe el ID al guardar, mientras que 'categoria_nombre' se usa para mostrar el texto al listar
         fields = ['id', 'nombre', 'categoria', 'categoria_nombre', 'stock_bodega', 'stock_vitrina', 'stock_minimo', 'stock_total']
 
-    # Validación estricta del backend para garantizar que el stock mínimo sea mayor a cero
     def validate_stock_minimo(self, value):
+        # No tiene sentido permitir stock mínimo en cero o números negativos
         if value <= 0:
             raise serializers.ValidationError("Ingrese una cantidad numérica válida mayor a cero")
         return value
 
     def validate(self, data):
-        # Tomar nombre (nuevo o el actual)
+        """
+        Revisa si el producto ya existe dentro de la categoría elegida.
+        """
+        # Si mandaron un nombre nuevo úsalo; si están editando y no lo mandaron, toma el nombre que ya tenía guardado en la base de datos
         nombre = data.get('nombre')
         if not nombre and self.instance:
             nombre = self.instance.nombre
 
-        # Tomar categoría (nueva o la actual)
+        # Hacemos lo mismo con la categoría: toma la nueva o mantén la que ya tenía.
+        # getattr maneja el caso de si DRF entrega el objeto completo o solo el número de ID
         categoria = data.get('categoria')
         categoria_id = getattr(categoria, 'id', categoria)
         if categoria_id is None and self.instance:
             categoria_id = self.instance.categoria_id
 
+        # Solo validamos si logramos obtener tanto el nombre como la categoría
         if nombre and categoria_id:
             nombre_limpio = nombre.strip()
             data['nombre'] = nombre_limpio
 
-            # Validar duplicados ignorando mayúsculas/minúsculas dentro de la misma categoría
+            # Busca si ya existe ese nombre en esa categoría (sin importar mayúsculas o minúsculas)
             query = Producto.objects.filter(nombre__iexact=nombre_limpio, categoria_id=categoria_id)
+
+            # Si estamos editando el producto, ignóralo a él mismo para no dar falso error
             if self.instance:
                 query = query.exclude(id=self.instance.id)
 
