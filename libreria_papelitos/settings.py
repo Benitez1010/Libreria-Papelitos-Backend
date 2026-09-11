@@ -17,7 +17,7 @@ SECRET_KEY = os.getenv(
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = [
-    'tu-backend.onrender.com',  # reemplaza por tu URL real de Render
+    'https://libreria-papelitos-backend.onrender.com',  # reemplaza por tu URL real de Render
     'localhost',
     '127.0.0.1',
 ]
