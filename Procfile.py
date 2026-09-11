@@ -1,0 +1,1 @@
+web: gunicorn libreria_papelitos.wsgi:application --bind 0.0.0.0:$PORT
