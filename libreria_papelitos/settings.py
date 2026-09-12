@@ -17,7 +17,7 @@ SECRET_KEY = os.getenv(
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = [
-    'https://libreria-papelitos-backend.onrender.com',  # reemplaza por tu URL real de Render
+    'https://libreria-papelitos-backend.onrender.com', 
     'localhost',
     '127.0.0.1',
 ]
@@ -105,7 +105,7 @@ STORAGES = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://tu-frontend.vercel.app",
+    "https://libreria-papelitos-frontend.vercel.app/",
 ]
 
 REST_FRAMEWORK = {
