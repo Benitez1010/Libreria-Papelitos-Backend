@@ -2,7 +2,7 @@ from django.urls import path
 from .views import (
     LoginView, UsuarioMeView, UsuarioListView, 
     DesactivarUsuarioView, ReactivarUsuarioView, RegistroUsuarioView,CambiarRolView,
-    SolicitarRecuperacionView, ConfirmarRecuperacionView
+    SolicitarRecuperacionView, ConfirmarRecuperacionView, BitacoraBloqueoView
 )
 
 # Definición de rutas internas para el módulo de Autenticación y Usuarios
@@ -23,4 +23,6 @@ urlpatterns = [
     # Rutas públicas para la recuperación de contraseña por correo electrónico
     path('recuperar-password/', SolicitarRecuperacionView.as_view(), name='recuperar-password'),
     path('restablecer-password/', ConfirmarRecuperacionView.as_view(), name='restablecer-password'),
+    # Ruta para consultar la bitácora de bloqueos de cuentas por intentos fallidos
+    path('bitacora-bloqueo/', BitacoraBloqueoView.as_view(), name='bitacora-bloqueo'),
 ]

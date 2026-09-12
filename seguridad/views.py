@@ -8,13 +8,14 @@ from .serializers import (
     LoginSerializer, UsuarioSerializer, RegistroUsuarioSerializer,
     SolicitudRecuperacionSerializer, ConfirmarRecuperacionSerializer
 )
-from .models import Usuario
+from .models import Usuario, BitacoraSeguridad
 from django.shortcuts import get_object_or_404 
 from django.conf import settings
 from django.core.mail import send_mail
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils import timezone
 
 class LoginView(APIView):
     """
@@ -309,8 +310,29 @@ class ConfirmarRecuperacionView(APIView):
         usuario.intentos_fallidos = 0
         usuario.bloqueado_hasta = None
         usuario.save()
-
+        
         return Response(
             {'mensaje': 'Contraseña actualizada correctamente. Ya puede iniciar sesión.'},
             status=status.HTTP_200_OK
         )
+    
+
+class BitacoraBloqueoView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.rol != Usuario.Roles.ADMINISTRADOR:
+            raise PermissionDenied('Acceso denegado: solo administradores pueden ver la bitácora.')
+
+        # Solo eventos de bloqueo real (sin intentos intermedios)
+        logs = BitacoraSeguridad.objects.filter(evento__icontains='Bloqueo').order_by('-fecha_hora')
+        datos = [
+            {
+                'id': log.id,
+                'usuario': log.usuario,
+                'evento': log.evento,
+                'fecha_hora': timezone.localtime(log.fecha_hora).strftime('%d/%m/%Y %H:%M:%S')
+            }
+            for log in logs
+        ]
+        return Response(datos, status=status.HTTP_200_OK)
