@@ -8,6 +8,7 @@ from rest_framework import permissions
 from .models import MovimientoInventario
 from django.db import transaction
 from django.core.exceptions import ValidationError
+from alertas.utils import disparar_alerta_email # <-- Importación del motor de alertas
 
 
 class CategoriaViewSet(viewsets.ModelViewSet):
@@ -95,66 +96,26 @@ class ProductoViewSet(viewsets.ModelViewSet):
             "errors": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    def update(self, request, *args, **kwargs):
-        """INV-09: Edición de producto con validación de nombre duplicado."""
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        
-        nombre = request.data.get('nombre', instance.nombre).strip()
-        categoria_id = request.data.get('categoria', instance.categoria_id)
-
-        # Validamos si ya existe otro producto con el mismo nombre y categoría
-        existe_duplicado = Producto.objects.filter(
-            nombre__iexact=nombre, 
-            categoria_id=categoria_id
-        ).exclude(id=instance.id).exists()
-
-        if existe_duplicado:
-            return Response({
-                "success": False,
-                "error_type": "PRODUCTO_DUPLICADO",
-                "nombre": [f"El producto '{nombre}' ya existe en esta categoría."],
-                "message": f"El producto '{nombre}' ya existe en esta categoría."
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({
-                "success": True,
-                "message": "Producto actualizado con éxito.",
-                "data": serializer.data
-            }, status=status.HTTP_200_OK)
-
-        return Response({
-            "success": False,
-            "error_type": "VALIDATION_ERROR",
-            "errors": serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
-
 class ProcesarMovimientoView(APIView):
     """
     Vista transaccional que procesa listas de productos facturados o trasladados desde React.
     Garantiza consistencia en bloque, aplicando la regla de: 'O se guardan todos o ninguno'.
     """
-    # Exige que las peticiones frontend incluyan el Token de sesión en las cabeceras HTTP
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         data = request.data
-        tipo_contexto = data.get('tipo_contexto') # Define la operación: venta, entrada, traslado, daño, correccion
+        tipo_contexto = data.get('tipo_contexto')
         justificacion = data.get('justificacion', '').strip()
-        detalles = data.get('detalles', []) # Arreglo de productos elegidos en React
+        detalles = data.get('detalles', [])
 
-        # Valida que la lista de productos no venga vacía
         if not detalles:
             return Response({
                 "success": False,
                 "message": "Debe seleccionar al menos un producto para registrar la transacción."
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Mapeo del contexto del frontend al Tipo de Movimiento real del backend
         mapeo_tipos = {
             'venta': MovimientoInventario.TipoMovimiento.SALIDA,
             'entrada': MovimientoInventario.TipoMovimiento.ENTRADA,
@@ -171,8 +132,6 @@ class ProcesarMovimientoView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # --- PROTECCIÓN EN BLOQUE ATÓMICO ---
-            # Si ocurre un error en el producto número 10, se cancelan los 9 anteriores automáticamente
             with transaction.atomic():
                 movimientos_registrados = []
 
@@ -182,7 +141,6 @@ class ProcesarMovimientoView(APIView):
                     except Producto.DoesNotExist:
                         raise ValidationError(f"El producto con ID {item.get('producto_id')} no existe en el catálogo.")
 
-                    # Mapea las variables estructuradas desde el formulario dinámico de React hacia el Modelo
                     movimiento = MovimientoInventario(
                         producto=producto,
                         tipo=tipo_movimiento_real,
@@ -190,22 +148,35 @@ class ProcesarMovimientoView(APIView):
                         origen=item.get('origen'),
                         destino=item.get('destino'),
                         justificacion=justificacion,
-                        usuario=request.user # Django extrae de forma segura el usuario del Token
+                        usuario=request.user 
                     )
                     
-                    # Al invocar el save() se calculan los nuevos stocks y se verifican restricciones de inventario negativo
+                    # Al guardar se calculan los nuevos saldos
                     movimiento.save()
                     
-                    # Almacena de manera temporal la información para construir el JSON informativo de respuesta
+                    # --- LÓGICA DE ALERTA ALT-05 ---
+                    requiere_alerta = producto.stock_total <= producto.stock_minimo
+                    
+                    if requiere_alerta:
+                        # Determinamos dinámicamente si la alerta fue provocada en Bodega o Vitrina
+                        ubicacion_alerta = item.get('origen') if tipo_movimiento_real in [MovimientoInventario.TipoMovimiento.SALIDA, MovimientoInventario.TipoMovimiento.DAÑO, MovimientoInventario.TipoMovimiento.TRASLADO] else item.get('destino')
+                        
+                        # transaction.on_commit asegura que el hilo del correo arranque SOLO si no hubo errores en el bloque atomic
+                        # Usamos argumentos por defecto (p_id=producto.id, etc) para blindar el contexto en ciclos for
+                        transaction.on_commit(
+                            lambda p_id=producto.id, p_nom=producto.nombre, c_nom=producto.categoria.nombre, 
+                                   u=ubicacion_alerta, s_act=producto.stock_total, s_min=producto.stock_minimo: 
+                            disparar_alerta_email(p_id, p_nom, c_nom, u, s_act, s_min)
+                        )
+                    
                     movimientos_registrados.append({
                         "producto": producto.nombre,
                         "cantidad": movimiento.cantidad,
                         "nuevo_stock_bodega": producto.stock_bodega,
                         "nuevo_stock_vitrina": producto.stock_vitrina,
-                        "requiere_alerta": producto.stock_total <= producto.stock_minimo
+                        "requiere_alerta": requiere_alerta
                     })
 
-            # Si el bucle termina con éxito, se confirma la transacción en la base de datos
             return Response({
                 "success": True,
                 "message": f"Transacción de tipo '{tipo_contexto.upper()}' procesada con éxito.",
@@ -213,7 +184,6 @@ class ProcesarMovimientoView(APIView):
             }, status=status.HTTP_201_CREATED)
 
         except ValidationError as e:
-            # Si el error viene agrupado en '__all__' por el método clean() del modelo, extraemos el texto limpio
             mensaje_limpio = str(e)
             if hasattr(e, 'message_dict') and '__all__' in e.message_dict:
                 mensaje_limpio = e.message_dict['__all__'][0]
@@ -223,11 +193,10 @@ class ProcesarMovimientoView(APIView):
             return Response({
                 "success": False,
                 "error_type": "BUSINESS_RULE_ERROR",
-                "message": mensaje_limpio # Enviará "Existencias insuficientes para realizar la operación."
+                "message": mensaje_limpio 
             }, status=status.HTTP_400_BAD_REQUEST)
             
         except Exception as e:
-            # Control ante fallas inesperadas de infraestructura o base de datos
             return Response({
                 "success": False,
                 "message": f"Fallo crítico en el servidor: {str(e)}"
