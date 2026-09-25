@@ -8,6 +8,7 @@ from rest_framework import permissions
 from .models import MovimientoInventario
 from django.db import transaction
 from django.core.exceptions import ValidationError
+from django.db.models.deletion import ProtectedError
 
 
 class CategoriaViewSet(viewsets.ModelViewSet):
@@ -131,6 +132,26 @@ class ProductoViewSet(viewsets.ModelViewSet):
             "error_type": "VALIDATION_ERROR",
             "errors": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    def destroy(self, request, *args, **kwargs):
+        instancia = self.get_object()
+        try:
+            instancia.delete()
+            return Response({
+                "success": True,
+                "message": "Producto eliminado con éxito."
+            }, status=status.HTTP_200_OK)
+        except ValidationError as e:
+            mensaje = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({
+                "success": False,
+                "message": mensaje
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except ProtectedError:
+            return Response({
+                "success": False,
+                "message": "No se puede eliminar: el producto tiene movimientos de inventario registrados en su historial."
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 class ProcesarMovimientoView(APIView):
     """
