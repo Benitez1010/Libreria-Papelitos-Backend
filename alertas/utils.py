@@ -1,4 +1,5 @@
-import threading
+import logging
+logger = logging.getLogger(__name__)
 from django.core.mail import send_mail
 from django.conf import settings
 from .models import DestinatarioCorreo, HistorialAlerta
@@ -96,14 +97,15 @@ def enviar_alerta_async(producto_id, producto_nombre, categoria_nombre, ubicacio
             send_mail(
                 subject=asunto,
                 message=mensaje_plano,
-                from_email=settings.EMAIL_HOST_USER,
+                from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=destinatarios,
                 html_message=cuerpo_html,
                 fail_silently=False
             )
             envio_exitoso = True
+            logger.info("Alerta de stock crítico enviada correctamente")
         except Exception:
-            # Falla silenciosa para evitar trabar el frontend
+            logger.exception("Error enviando alerta de stock crítico")
             envio_exitoso = False
     
     # Registro inmutable en la bitácora

@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -265,14 +267,17 @@ class SolicitarRecuperacionView(APIView):
 </div>
 """
 
-            send_mail(
-                subject='Recuperación de contraseña - Librería Papelitos',
-                message=cuerpo,
-                from_email=settings.EMAIL_HOST_USER,
-                recipient_list=[usuario.email],
-                html_message=cuerpo_html,
-                fail_silently=True
-            )
+            try:
+                send_mail(
+                    subject='Recuperación de contraseña - Librería Papelitos',
+                    message=cuerpo,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[usuario.email],
+                    html_message=cuerpo_html,
+                    fail_silently=False,
+                )
+            except Exception:
+                logger.exception("Error enviando correo de recuperación")
 
         return Response({'mensaje': mensaje_generico}, status=status.HTTP_200_OK)
 

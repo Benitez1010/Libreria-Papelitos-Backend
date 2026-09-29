@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
+    'anymail',
     'inventario',
     'seguridad',
     'alertas',
@@ -122,17 +123,23 @@ REST_FRAMEWORK = {
     ],
 }
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+# --- CORREO (Brevo por API HTTP con django-anymail) ---
+if os.getenv('BREVO_API_KEY'):
+    EMAIL_BACKEND = 'anymail.backends.brevo.EmailBackend'
+    ANYMAIL = {'BREVO_API_KEY': os.getenv('BREVO_API_KEY')}
+else:
+    # Sin API key (local): los correos se imprimen en la terminal
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+DEFAULT_FROM_EMAIL = os.getenv(
+    'DEFAULT_FROM_EMAIL',
+    'Librería Papelitos <alertas.papelitos@gmail.com>'
+)
 
 # --- RECUPERACIÓN DE CONTRASEÑA (SEG-01) ---
 # Vigencia del token de recuperación en segundos (1 hora)
 PASSWORD_RESET_TIMEOUT = 3600
 # Base del enlace enviado al correo, apunta al servidor de desarrollo de Vite
-FRONTEND_URL = 'http://localhost:5173'
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
 # Logo servido públicamente para el correo de recuperación
 LOGO_URL = 'https://raw.githubusercontent.com/Benitez1010/Libreria-Papelitos-Frontend/main/public/logo.png'
