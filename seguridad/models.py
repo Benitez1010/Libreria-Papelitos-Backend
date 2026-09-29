@@ -115,3 +115,17 @@ class Usuario(AbstractUser):
 
         # 4. Guarda definitivamente los datos en la base de datos
         super().save(*args, **kwargs)
+
+# ... termina la clase Usuario y su método save() ...
+
+class BitacoraSeguridad(models.Model):
+    usuario = models.CharField(max_length=150)
+    evento = models.CharField(max_length=255)
+    fecha_hora = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'bitacora_seguridad'
+        ordering = ['-fecha_hora']
+
+    def __str__(self):
+        return f"{self.usuario} - {self.evento} ({self.fecha_hora})"
