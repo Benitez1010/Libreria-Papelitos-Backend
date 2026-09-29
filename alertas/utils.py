@@ -114,10 +114,7 @@ def enviar_alerta_async(producto_id, producto_nombre, categoria_nombre, ubicacio
     )
 
 def disparar_alerta_email(producto_id, producto_nombre, categoria_nombre, ubicacion, saldo_actual, stock_minimo):
-    """
-    Invocador del hilo. Se pasan variables primitivas para evitar bloqueos del ORM.
-    """
-    hilo = threading.Thread(target=enviar_alerta_async, args=(
+    # Ejecución síncrona obligatoria para servidores Serverless (Vercel) y capas gratuitas
+    enviar_alerta_async(
         producto_id, producto_nombre, categoria_nombre, ubicacion, saldo_actual, stock_minimo
-    ))
-    hilo.start()
+    )
