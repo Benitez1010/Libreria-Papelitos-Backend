@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Categoria, Producto
+from .models import Categoria, Producto, MovimientoInventario
 
 class CategoriaSerializer(serializers.ModelSerializer):
     """
@@ -81,4 +81,49 @@ class ProductoSerializer(serializers.ModelSerializer):
                     "nombre": f"El producto '{nombre_limpio}' ya existe en esta categoría."
                 })
 
+        return data
+
+class MovimientoInventarioSerializer(serializers.ModelSerializer):
+    """
+    Controla las transacciones de inventario y la trazabilidad (SEG-07).
+    Expone el responsable y valida la justificación en ajustes.
+    """
+    producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+    origen_display = serializers.CharField(source='get_origen_display', read_only=True)
+    destino_display = serializers.CharField(source='get_destino_display', read_only=True)
+    
+    # Campo obligatorio para los reportes de historial (SEG-07)
+    responsable = serializers.ReadOnlyField(source='usuario.username')
+
+    class Meta:
+        model = MovimientoInventario
+        fields = [
+            'id',
+            'producto',
+            'producto_nombre',
+            'tipo',
+            'tipo_display',
+            'cantidad',
+            'origen',
+            'origen_display',
+            'destino',
+            'destino_display',
+            'justificacion',
+            'responsable',
+            'fecha_hora'
+        ]
+        # El usuario y la fecha se asignan automáticamente en el backend
+        read_only_fields = ['usuario', 'fecha_hora']
+
+    def validate(self, data):
+        tipo = data.get('tipo')
+        justificacion = data.get('justificacion')
+
+        # Criterio SEG-07: Obligatoriedad de justificación en ajustes/mermas
+        if tipo in [MovimientoInventario.TipoMovimiento.DAÑO, MovimientoInventario.TipoMovimiento.CORRECCION]:
+            if not justificacion or not justificacion.strip():
+                raise serializers.ValidationError({
+                    'justificacion': 'Es obligatorio ingresar un comentario detallado justificando la operación.'
+                })
         return data

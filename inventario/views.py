@@ -1,13 +1,14 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from .models import Categoria, Producto
-from .serializers import CategoriaSerializer, ProductoSerializer
+from .serializers import CategoriaSerializer, ProductoSerializer, MovimientoInventarioSerializer
 from rest_framework.views import APIView
 from rest_framework.authentication import TokenAuthentication
 from rest_framework import permissions
 from .models import MovimientoInventario
 from django.db import transaction
 from django.core.exceptions import ValidationError
+from django.db.models.deletion import ProtectedError
 from alertas.utils import disparar_alerta_email # <-- Importación del motor de alertas
 
 
@@ -96,6 +97,56 @@ class ProductoViewSet(viewsets.ModelViewSet):
             "errors": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    def destroy(self, request, *args, **kwargs):
+        instancia = self.get_object()
+        try:
+            instancia.delete()
+            return Response({
+                "success": True,
+                "message": "Producto eliminado con éxito."
+            }, status=status.HTTP_200_OK)
+        except ValidationError as e:
+            mensaje = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({
+                "success": False,
+                "message": mensaje
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                "success": True,
+                "message": "Producto actualizado con éxito.",
+                "data": serializer.data
+            }, status=status.HTTP_200_OK)
+
+        return Response({
+            "success": False,
+            "error_type": "VALIDATION_ERROR",
+            "errors": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    def destroy(self, request, *args, **kwargs):
+        instancia = self.get_object()
+        try:
+            instancia.delete()
+            return Response({
+                "success": True,
+                "message": "Producto eliminado con éxito."
+            }, status=status.HTTP_200_OK)
+        except ValidationError as e:
+            mensaje = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({
+                "success": False,
+                "message": mensaje
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except ProtectedError:
+            return Response({
+                "success": False,
+                "message": "No se puede eliminar: el producto tiene movimientos de inventario registrados en su historial."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
 class ProcesarMovimientoView(APIView):
     """
     Vista transaccional que procesa listas de productos facturados o trasladados desde React.
@@ -130,6 +181,14 @@ class ProcesarMovimientoView(APIView):
                 "success": False,
                 "message": "El contexto de la transacción enviado no es válido."
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Criterio SEG-07: Justificación obligatoria en mermas/ajustes
+        if tipo_movimiento_real in [MovimientoInventario.TipoMovimiento.DAÑO, MovimientoInventario.TipoMovimiento.CORRECCION]:
+            if not justificacion:
+                return Response({
+                    "success": False,
+                    "message": "Es obligatorio ingresar un comentario detallado justificando la operación."
+                }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             with transaction.atomic():
@@ -201,3 +260,16 @@ class ProcesarMovimientoView(APIView):
                 "success": False,
                 "message": f"Fallo crítico en el servidor: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class HistorialMovimientosView(APIView):
+    """
+    SEG-07: Lista el historial de movimientos con trazabilidad completa.
+    Requiere sesión activa y expone el campo 'responsable'.
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        movimientos = MovimientoInventario.objects.all().select_related('producto', 'usuario').order_by('-fecha_hora')
+        serializer = MovimientoInventarioSerializer(movimientos, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

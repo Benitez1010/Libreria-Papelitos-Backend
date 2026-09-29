@@ -4,7 +4,7 @@ from rest_framework import serializers
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from .models import Usuario
+from .models import Usuario, BitacoraSeguridad
 import math
 
 
@@ -75,11 +75,22 @@ class LoginSerializer(serializers.Serializer):
                 usuario.intentos_fallidos = 0
                 usuario.save()
 
+                # ÚNICO REGISTRO EN BITÁCORA (SOLO BLOQUEO)
+                BitacoraSeguridad.objects.create(
+                    usuario=usuario.username,
+                    evento='Bloqueo temporal de cuenta tras 5 intentos fallidos'
+                )
+
                 raise serializers.ValidationError(
                     'Cuenta bloqueada temporalmente por seguridad. Intente nuevamente en 15 minutos'
                 )
 
             usuario.save()
+
+            BitacoraSeguridad.objects.create(
+                usuario=usuario.username,
+                evento=f'Intento fallido de contraseña ({usuario.intentos_fallidos}/5)')
+            
             intentos_restantes = 5 - usuario.intentos_fallidos
             raise serializers.ValidationError(
                 f'Credenciales inválidas. Le quedan {intentos_restantes} intentos antes del bloqueo.'
