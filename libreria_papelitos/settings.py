@@ -87,7 +87,11 @@ else:
 
 AUTH_USER_MODEL = 'seguridad.Usuario'
 
-LANGUAGE_CODE = 'es'
+# Internationalization
+# https://docs.djangoproject.com/en/6.0/topics/i18n/
+
+LANGUAGE_CODE = 'en-us'
+
 TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
@@ -123,6 +127,11 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+
+# --- RECUPERACIÓN DE CONTRASEÑA (SEG-01) ---
+# Vigencia del token de recuperación en segundos (1 hora)
 PASSWORD_RESET_TIMEOUT = 3600
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+# Base del enlace enviado al correo, apunta al servidor de desarrollo de Vite
+FRONTEND_URL = 'http://localhost:5173'
+# Logo servido públicamente para el correo de recuperación
 LOGO_URL = 'https://raw.githubusercontent.com/Benitez1010/Libreria-Papelitos-Frontend/main/public/logo.png'

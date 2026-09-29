@@ -35,6 +35,23 @@ class DestinatarioCorreoViewSet(viewsets.ModelViewSet):
             headers=headers
         )
 
+    def destroy(self, request, *args, **kwargs):
+        try:
+            instancia = self.get_object()
+            correo_eliminado = instancia.correo
+            instancia.delete()
+            
+            return Response({
+                "success": True,
+                "message": f"El correo {correo_eliminado} fue eliminado."
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": "Fallo técnico al intentar eliminar el destinatario."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
 class HistorialAlertaViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = HistorialAlerta.objects.all()
     serializer_class = HistorialAlertaSerializer

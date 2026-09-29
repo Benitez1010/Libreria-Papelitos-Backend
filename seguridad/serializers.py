@@ -2,11 +2,16 @@ from datetime import datetime, timedelta
 from django.utils import timezone
 from rest_framework import serializers
 from django.contrib.auth import authenticate
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import Usuario
 import math
+
+
 class LoginSerializer(serializers.Serializer):
     """
-    Serializer encargado de procesar y validar las credenciales de inicio de sesión.
+    Valida las credenciales de acceso, controla los intentos fallidos
+    y bloquea la cuenta temporalmente si se sobrepasan los límites.
     """
     username = serializers.CharField(required=True)
     password = serializers.CharField(required=True, write_only=True)
@@ -19,7 +24,8 @@ class LoginSerializer(serializers.Serializer):
         if not username_input or not password:
             raise serializers.ValidationError('Debe proporcionar usuario y contraseña.')
 
-        # Identifica si el usuario ingresó un correo electrónico o un nombre de usuario
+        # Si el usuario escribió un correo con '@', buscamos el username que le corresponde.
+        # Siempre devolvemos "Credenciales inválidas" para no revelar si el correo existe en el sistema.
         if '@' in username_input:
             try:
                 usuario = Usuario.objects.get(email=username_input)
@@ -29,17 +35,17 @@ class LoginSerializer(serializers.Serializer):
         else:
             username = username_input
 
-        # Busca la existencia del usuario en la base de datos
+        # Verificamos si existe el usuario antes de intentar autenticarlo           
         try:
             usuario = Usuario.objects.get(username=username)
         except Usuario.DoesNotExist:
             raise serializers.ValidationError('Credenciales inválidas, intente nuevamente.')
 
-        # Verificar si la cuenta está desactivada administrativamente
+        # Si el administrador dio de baja al usuario, frenamos el login de inmediato
         if not usuario.is_active:
             raise serializers.ValidationError('Su cuenta ha sido desactivada. Contacte al administrador para reactivarla.')
 
-        # Verificación de bloqueo activo con tiempo dinámico restante
+        # Revisamos si la cuenta aún tiene un castigo de tiempo activo
         if usuario.bloqueado_hasta and usuario.bloqueado_hasta > timezone.now():
             segundos_restantes = (usuario.bloqueado_hasta - timezone.now()).total_seconds()
             minutos_restantes = max(1, math.ceil(segundos_restantes / 60))
@@ -48,7 +54,7 @@ class LoginSerializer(serializers.Serializer):
                 f'Cuenta bloqueada temporalmente por seguridad. Intente nuevamente en {minutos_restantes} {unidad}'
             )
 
-        # Intento de autenticación con las credenciales ingresadas
+        # Verificamos la contraseña con el método nativo de Django
         user = authenticate(username=username, password=password)
 
         if user:
@@ -96,6 +102,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
                    'area', 'area_display', 'is_active', 'estado', 'date_joined']
 
     def get_estado(self, obj):
+        # Para mostrar "Activo" o "Inactivo" en lugar de un simple true/false
         return 'Activo' if obj.is_active else 'Inactivo'
 
 
@@ -119,7 +126,7 @@ class RegistroUsuarioSerializer(serializers.ModelSerializer):
         model = Usuario
         fields = ['username', 'password', 'nombre_completo', 'email', 'rol']
 
-    # --- VALIDACIONES EN CALIENTE PARA EVITAR DATOS DUPLICADOS ---
+    # --- Validamos duplicados campo por campo antes de guardar ---
     def validate_username(self, value):
         if Usuario.objects.filter(username=value).exists():
             raise serializers.ValidationError('Este nombre de usuario ya existe.')
@@ -152,3 +159,45 @@ class RegistroUsuarioSerializer(serializers.ModelSerializer):
             password=password
         )
         return user
+
+#Para recuperear contraseña
+class SolicitudRecuperacionSerializer(serializers.Serializer):
+    """
+    Serializer encargado de recibir el correo para iniciar el proceso de recuperación.
+    Solo valida el formato; la existencia del usuario se resuelve en la vista para no
+    revelar si el correo está registrado en el sistema.
+    """
+    email = serializers.EmailField(
+        required=True,
+        error_messages={
+            'required': 'Debe proporcionar un correo electrónico.',
+            'invalid': 'Ingrese un correo electrónico válido.',
+            'blank': 'Debe proporcionar un correo electrónico.'
+        }
+    )
+
+
+class ConfirmarRecuperacionSerializer(serializers.Serializer):
+    """
+    Serializer encargado de validar el enlace de recuperación y la nueva contraseña.
+    Aplica las reglas de seguridad definidas en AUTH_PASSWORD_VALIDATORS.
+    """
+    uid = serializers.CharField(required=True)
+    token = serializers.CharField(required=True)
+    password = serializers.CharField(
+        required=True,
+        write_only=True,
+        min_length=8,
+        error_messages={
+            'min_length': 'La contraseña debe tener al menos 8 caracteres.',
+            'required': 'Debe proporcionar una nueva contraseña.',
+            'blank': 'Debe proporcionar una nueva contraseña.'
+        }
+    )
+
+    def validate_password(self, value):
+        try:
+            validate_password(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(list(e.messages))
+        return value 
