@@ -202,3 +202,92 @@ class ConfirmacionRecuperacionTests(APITestCase):
         self.usuario.refresh_from_db()
         self.assertEqual(self.usuario.intentos_fallidos, 0)
         self.assertIsNone(self.usuario.bloqueado_hasta)
+
+
+
+class EdicionUsuarioTests(APITestCase):
+    """
+    Pruebas del endpoint que edita los datos personales de un usuario (SEG-03).
+    Verifica la actualización de los datos, las reglas de unicidad y el control de acceso.
+    """
+
+    def setUp(self):
+        self.administrador = Usuario.objects.create_user(
+            username='AdminPrueba',
+            email='admin@papelitos.com',
+            password='Papelitos2026',
+            first_name='Admin Prueba',
+            rol=Usuario.Roles.ADMINISTRADOR
+        )
+        self.operador = Usuario.objects.create_user(
+            username='OperadorPrueba',
+            email='operador@papelitos.com',
+            password='Papelitos2026',
+            first_name='Operador Prueba',
+            rol=Usuario.Roles.OPERADOR_BODEGA
+        )
+        self.editable = Usuario.objects.create_user(
+            username='UsuarioEditable',
+            email='editable@papelitos.com',
+            password='Papelitos2026',
+            first_name='Usuario Editable',
+            rol=Usuario.Roles.OPERADOR_CAJA
+        )
+        self.url = reverse('usuarios-editar', args=[self.editable.pk])
+        self.datos_actuales = {
+            'username': 'UsuarioEditable',
+            'nombre_completo': 'Usuario Editable',
+            'email': 'editable@papelitos.com'
+        }
+
+    def test_administrador_edita_los_datos_personales(self):
+        """DATO VÁLIDO: el administrador actualiza usuario, nombre y correo sin alterar el rol."""
+        self.client.force_authenticate(user=self.administrador)
+        respuesta = self.client.patch(self.url, {
+            'username': 'UsuarioActualizado',
+            'nombre_completo': 'Usuario Actualizado',
+            'email': 'actualizado@papelitos.com'
+        }, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+        self.editable.refresh_from_db()
+        self.assertEqual(self.editable.username, 'UsuarioActualizado')
+        self.assertEqual(self.editable.first_name, 'Usuario Actualizado')
+        self.assertEqual(self.editable.email, 'actualizado@papelitos.com')
+        self.assertEqual(self.editable.rol, Usuario.Roles.OPERADOR_CAJA)
+
+    def test_guardar_sin_cambios_no_genera_falso_duplicado(self):
+        """DATO LÍMITE: reenviar los mismos valores no debe activar las reglas de unicidad."""
+        self.client.force_authenticate(user=self.administrador)
+        respuesta = self.client.patch(self.url, self.datos_actuales, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+
+    def test_correo_de_otro_usuario_es_rechazado(self):
+        """DATO ERRÓNEO: no se permite reutilizar el correo de una cuenta existente."""
+        self.client.force_authenticate(user=self.administrador)
+        datos = dict(self.datos_actuales, email='operador@papelitos.com')
+        respuesta = self.client.patch(self.url, datos, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('email', respuesta.data)
+        self.editable.refresh_from_db()
+        self.assertEqual(self.editable.email, 'editable@papelitos.com')
+
+    def test_operador_no_puede_editar_usuarios(self):
+        """DATO ERRÓNEO: un rol sin privilegios administrativos recibe acceso denegado."""
+        self.client.force_authenticate(user=self.operador)
+        datos = dict(self.datos_actuales, username='NombreNoPermitido')
+        respuesta = self.client.patch(self.url, datos, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_403_FORBIDDEN)
+        self.editable.refresh_from_db()
+        self.assertEqual(self.editable.username, 'UsuarioEditable')
+
+    def test_peticion_sin_autenticacion_es_rechazada(self):
+        """DATO ERRÓNEO: sin token de sesión la petición no alcanza la vista."""
+        respuesta = self.client.patch(self.url, self.datos_actuales, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.editable.refresh_from_db()
+        self.assertEqual(self.editable.username, 'UsuarioEditable')

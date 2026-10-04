@@ -8,7 +8,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
 from .serializers import (
     LoginSerializer, UsuarioSerializer, RegistroUsuarioSerializer,
-    SolicitudRecuperacionSerializer, ConfirmarRecuperacionSerializer
+    SolicitudRecuperacionSerializer, ConfirmarRecuperacionSerializer,
+    EdicionUsuarioSerializer
 )
 from .models import Usuario, BitacoraSeguridad
 from django.shortcuts import get_object_or_404 
@@ -136,6 +137,31 @@ class RegistroUsuarioView(APIView):
                 'mensaje': 'Usuario creado con éxito.',
                 'usuario': UsuarioSerializer(usuario).data
             }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class EditarUsuarioView(APIView):
+    """
+    Vista exclusiva para que el administrador actualice los datos personales
+    de un usuario: nombre de usuario, nombre completo y correo electrónico.
+    No modifica el rol, el área ni el estado de la cuenta.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        if request.user.rol != Usuario.Roles.ADMINISTRADOR:
+            return Response(
+                {'error': 'No tienes permisos para realizar esta acción.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        usuario = get_object_or_404(Usuario, pk=pk)
+        serializer = EdicionUsuarioSerializer(usuario, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'mensaje': 'Datos del usuario actualizados correctamente.',
+                'usuario': UsuarioSerializer(usuario).data
+            }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class CambiarRolView(APIView):

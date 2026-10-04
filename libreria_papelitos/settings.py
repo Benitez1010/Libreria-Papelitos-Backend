@@ -91,7 +91,7 @@ AUTH_USER_MODEL = 'seguridad.Usuario'
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'es'
 
 TIME_ZONE = 'America/El_Salvador'
 
