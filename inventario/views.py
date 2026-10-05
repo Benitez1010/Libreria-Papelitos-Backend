@@ -56,7 +56,7 @@ class ProductoViewSet(viewsets.ModelViewSet):
     Controlador CRUD completo para el catálogo de productos.
     Incluye lógica de asistencia para inventario inicial y alertas preventivas de duplicados.
     """
-    queryset = Producto.objects.all()
+    queryset = Producto.objects.all().order_by('nombre')
     serializer_class = ProductoSerializer
 
     def create(self, request, *args, **kwargs):
@@ -97,30 +97,17 @@ class ProductoViewSet(viewsets.ModelViewSet):
             "errors": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    def destroy(self, request, *args, **kwargs):
-        instancia = self.get_object()
-        try:
-            instancia.delete()
-            return Response({
-                "success": True,
-                "message": "Producto eliminado con éxito."
-            }, status=status.HTTP_200_OK)
-        except ValidationError as e:
-            mensaje = e.messages[0] if hasattr(e, 'messages') else str(e)
-            return Response({
-                "success": False,
-                "message": mensaje
-            }, status=status.HTTP_400_BAD_REQUEST)
-
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         if serializer.is_valid():
             serializer.save()
             return Response({
-                "success": True,
-                "message": "Producto actualizado con éxito.",
-                "data": serializer.data
-            }, status=status.HTTP_200_OK)
-
+            "success": True,
+            "message": "Producto actualizado con éxito.",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
         return Response({
             "success": False,
             "error_type": "VALIDATION_ERROR",
