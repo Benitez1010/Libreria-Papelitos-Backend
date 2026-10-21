@@ -56,7 +56,7 @@ class ProductoViewSet(viewsets.ModelViewSet):
     Controlador CRUD completo para el catálogo de productos.
     Incluye lógica de asistencia para inventario inicial y alertas preventivas de duplicados.
     """
-    queryset = Producto.objects.all().order_by('nombre')
+    queryset = Producto.objects.filter(descontinuado=False).order_by('nombre')
     serializer_class = ProductoSerializer
 
     def create(self, request, *args, **kwargs):
@@ -74,12 +74,28 @@ class ProductoViewSet(viewsets.ModelViewSet):
         
         if producto_existente:
             # Enviamos una respuesta con un código de error específico y un mensaje
-            return Response({
-                "success": False,
-                "error_type": "PRODUCTO_DUPLICADO",
-                "message": f"El producto '{nombre}' ya existe en esta categoría. ¿Deseas ir a actualizar su stock?",
-                "producto_id": producto_existente.id
-            }, status=status.HTTP_400_BAD_REQUEST)
+            # LÓGICA DE REACTIVACIÓN
+            if producto_existente.descontinuado:
+                producto_existente.descontinuado = False
+                if 'cantidad_inicial' in data:
+                    producto_existente.stock_bodega += int(data['cantidad_inicial'])
+                if 'stock_minimo' in data:
+                    producto_existente.stock_minimo = int(data['stock_minimo'])
+                producto_existente.save()
+                
+                serializer = self.get_serializer(producto_existente)
+                return Response({
+                    "success": True,
+                    "message": f"El producto '{nombre}' estaba descontinuado y ha sido reactivado con éxito.",
+                    "data": serializer.data
+                }, status=status.HTTP_201_CREATED)
+            else:
+                return Response({
+                    "success": False,
+                    "error_type": "PRODUCTO_DUPLICADO",
+                    "message": f"El producto '{nombre}' ya existe en esta categoría. ¿Deseas ir a actualizar su stock?",
+                    "producto_id": producto_existente.id
+                }, status=status.HTTP_400_BAD_REQUEST)
 
         # Si no existe, procedemos con el flujo normal
         serializer = self.get_serializer(data=data)
@@ -129,10 +145,12 @@ class ProductoViewSet(viewsets.ModelViewSet):
                 "message": mensaje
             }, status=status.HTTP_400_BAD_REQUEST)
         except ProtectedError:
+            instancia.descontinuado = True
+            instancia.save()
             return Response({
-                "success": False,
-                "message": "No se puede eliminar: el producto tiene movimientos de inventario registrados en su historial."
-            }, status=status.HTTP_400_BAD_REQUEST)
+                "success": True,
+                "message": "El producto tiene historial registrado. Fue descontinuado lógicamente y oculto del catálogo."
+            }, status=status.HTTP_200_OK)
 
 class ProcesarMovimientoView(APIView):
     """

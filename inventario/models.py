@@ -47,6 +47,11 @@ class Producto(models.Model):
         help_text="Cantidad mínima permitida antes de disparar alertas (Mayor a cero)."
     )
 
+    descontinuado = models.BooleanField(
+        default=False, 
+        help_text="True si el producto ya no se vende. Se oculta del catálogo pero conserva su trazabilidad."
+    )
+
     class Meta:
         unique_together = ('nombre', 'categoria') # Evita que se registre el mismo producto en la misma categoría
         db_table = 'productos'
