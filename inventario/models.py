@@ -127,10 +127,29 @@ class MovimientoInventario(models.Model):
 
         # INV-06: Validación contra inventario negativo basándose en el origen real
         if self.tipo in [self.TipoMovimiento.SALIDA, self.TipoMovimiento.TRASLADO, self.TipoMovimiento.DAÑO]:
-            if self.origen == self.Ubicacion.BODEGA and self.producto.stock_bodega < self.cantidad:
-                raise ValidationError("Existencias insuficientes para realizar la operación.")
-            elif self.origen == self.Ubicacion.VITRINA and self.producto.stock_vitrina < self.cantidad:
-                raise ValidationError("Existencias insuficientes para realizar la operación.")
+            ubicaciones = {
+                self.Ubicacion.BODEGA: ("Bodega", self.producto.stock_bodega),
+                self.Ubicacion.VITRINA: ("Vitrina", self.producto.stock_vitrina),
+            }
+            if self.origen in ubicaciones:
+                nombre, disponible = ubicaciones[self.origen]
+                if disponible < self.cantidad:
+                    mensaje = (
+                        f"Existencias insuficientes para realizar la operación. En {nombre} "
+                        f"hay {disponible} unidad(es) y se solicitan {self.cantidad}."
+                    )
+                    # Sugerencia solo para despachos desde Vitrina
+                    if self.tipo == self.TipoMovimiento.SALIDA and self.origen == self.Ubicacion.VITRINA:
+                        en_bodega = self.producto.stock_bodega
+                        faltante = self.cantidad - disponible
+                        total = disponible + en_bodega
+                        if en_bodega >= faltante:
+                            mensaje += (f" Faltan {faltante} unidad(es) en Vitrina y hay {en_bodega} en Bodega. "
+                                        f"Traslada al menos {faltante} a Vitrina antes de despachar.")
+                        elif en_bodega > 0:
+                            mensaje += (f" Aun sumando Bodega ({en_bodega}), el stock total es {total} "
+                                        f"y no alcanza para {self.cantidad}.")
+                    raise ValidationError(mensaje)
 
     def save(self, *args, **kwargs):
         self.full_clean()
