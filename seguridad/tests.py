@@ -291,3 +291,90 @@ class EdicionUsuarioTests(APITestCase):
         self.assertEqual(respuesta.status_code, status.HTTP_401_UNAUTHORIZED)
         self.editable.refresh_from_db()
         self.assertEqual(self.editable.username, 'UsuarioEditable')
+
+
+class DesactivacionUsuarioTests(APITestCase):
+    """
+    Pruebas del endpoint que da de baja la cuenta de un usuario (SEG-04 y SEG-10).
+    Verifica que un administrador pueda desactivar a otros administradores,
+    pero no a sí mismo, y que los demás roles no puedan desactivar cuentas.
+    """
+
+    def setUp(self):
+        self.administrador = Usuario.objects.create_user(
+            username='AdminPrueba',
+            email='admin@papelitos.com',
+            password='Papelitos2026',
+            first_name='Admin Prueba',
+            rol=Usuario.Roles.ADMINISTRADOR
+        )
+        self.otro_administrador = Usuario.objects.create_user(
+            username='AdminSecundario',
+            email='admin2@papelitos.com',
+            password='Papelitos2026',
+            first_name='Admin Secundario',
+            rol=Usuario.Roles.ADMINISTRADOR
+        )
+        self.operador = Usuario.objects.create_user(
+            username='OperadorPrueba',
+            email='operador@papelitos.com',
+            password='Papelitos2026',
+            first_name='Operador Prueba',
+            rol=Usuario.Roles.OPERADOR_BODEGA
+        )
+
+    def url_desactivar(self, usuario_id):
+        return reverse('usuarios-desactivar', args=[usuario_id])
+
+    def test_administrador_desactiva_a_otro_administrador(self):
+        """DATO VÁLIDO: un administrador da de baja a otro administrador sin borrar su cuenta."""
+        self.client.force_authenticate(user=self.administrador)
+        respuesta = self.client.post(self.url_desactivar(self.otro_administrador.pk))
+
+        self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+        self.otro_administrador.refresh_from_db()
+        self.assertFalse(self.otro_administrador.is_active)
+        self.assertTrue(Usuario.objects.filter(pk=self.otro_administrador.pk).exists())
+
+    def test_administrador_desactiva_a_un_operador(self):
+        """DATO VÁLIDO: un administrador da de baja la cuenta de un operador."""
+        self.client.force_authenticate(user=self.administrador)
+        respuesta = self.client.post(self.url_desactivar(self.operador.pk))
+
+        self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+        self.operador.refresh_from_db()
+        self.assertFalse(self.operador.is_active)
+
+    def test_administrador_no_puede_desactivarse_a_si_mismo(self):
+        """DATO LÍMITE: el administrador en sesión no puede dar de baja su propia cuenta."""
+        self.client.force_authenticate(user=self.administrador)
+        respuesta = self.client.post(self.url_desactivar(self.administrador.pk))
+
+        self.assertEqual(respuesta.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(respuesta.data['error'], 'No puede desactivar su propia cuenta.')
+        self.administrador.refresh_from_db()
+        self.assertTrue(self.administrador.is_active)
+
+    def test_operador_no_puede_desactivar_a_un_administrador(self):
+        """DATO ERRÓNEO: un rol sin privilegios administrativos recibe acceso denegado."""
+        self.client.force_authenticate(user=self.operador)
+        respuesta = self.client.post(self.url_desactivar(self.administrador.pk))
+
+        self.assertEqual(respuesta.status_code, status.HTTP_403_FORBIDDEN)
+        self.administrador.refresh_from_db()
+        self.assertTrue(self.administrador.is_active)
+
+    def test_usuario_inexistente_devuelve_no_encontrado(self):
+        """DATO ERRÓNEO: un identificador que no existe responde que el usuario no se encontró."""
+        self.client.force_authenticate(user=self.administrador)
+        respuesta = self.client.post(self.url_desactivar(99999))
+
+        self.assertEqual(respuesta.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_peticion_sin_autenticacion_es_rechazada(self):
+        """DATO ERRÓNEO: sin token de sesión la petición no alcanza la vista."""
+        respuesta = self.client.post(self.url_desactivar(self.otro_administrador.pk))
+
+        self.assertEqual(respuesta.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.otro_administrador.refresh_from_db()
+        self.assertTrue(self.otro_administrador.is_active)

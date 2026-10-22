@@ -77,6 +77,12 @@ class DesactivarUsuarioView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
+        if request.user.rol != Usuario.Roles.ADMINISTRADOR:
+            return Response(
+                {'error': 'No tienes permisos para realizar esta acción.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         try:
             usuario = Usuario.objects.get(pk=pk)
         except Usuario.DoesNotExist:
@@ -85,10 +91,6 @@ class DesactivarUsuarioView(APIView):
         # Candado 1: Evita que el usuario en sesión apague su propio acceso
         if request.user.id == usuario.id:
             return Response({'error': 'No puede desactivar su propia cuenta.'}, status=status.HTTP_403_FORBIDDEN)
-
-        # Candado 2: Protege la jerarquía evitando que un administrador desactive a otro administrador
-        if usuario.rol == Usuario.Roles.ADMINISTRADOR and request.user.id != usuario.id:
-            return Response({'error': 'No puede desactivar a otro administrador.'}, status=status.HTTP_403_FORBIDDEN)
 
         usuario.is_active = False
         usuario.save()
