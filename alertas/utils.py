@@ -2,13 +2,26 @@ import logging
 logger = logging.getLogger(__name__)
 from django.core.mail import send_mail
 from django.conf import settings
-from .models import DestinatarioCorreo, HistorialAlerta
+from .models import DestinatarioCorreo, HistorialAlerta, ConfiguracionAlerta
 
 def enviar_alerta_async(producto_id, producto_nombre, categoria_nombre, ubicacion, saldo_actual, stock_minimo):
     """
     Función interna que procesa el correo de forma aislada, utilizando
     la plantilla HTML institucional de Librería Papelitos.
     """
+    # 1. VERIFICAR INTERRUPTOR GLOBAL DE NOTIFICACIONES
+    config = ConfiguracionAlerta.get_config()
+    if not config.notificaciones_globales_activas:
+        logger.info(f"Envío abortado: Las notificaciones globales están desactivadas. (Producto: {producto_nombre})")
+        # Se guarda el registro en bitácora aunque el correo no se envíe
+        HistorialAlerta.objects.create(
+            producto_id=producto_id,
+            saldo_momento=saldo_actual,
+            notificacion_enviada=False
+        )
+        return False  # Indica que no se envió el correo debido a la configuración global
+
+    # 2. CONTINUAR CON EL ENVÍO NORMAL
     destinatarios = list(DestinatarioCorreo.objects.filter(activo=True).values_list('correo', flat=True))
     envio_exitoso = False
     
@@ -114,9 +127,10 @@ def enviar_alerta_async(producto_id, producto_nombre, categoria_nombre, ubicacio
         saldo_momento=saldo_actual,
         notificacion_enviada=envio_exitoso
     )
+    return envio_exitoso  # Indica si el correo fue enviado exitosamente o no
 
 def disparar_alerta_email(producto_id, producto_nombre, categoria_nombre, ubicacion, saldo_actual, stock_minimo):
     # Ejecución síncrona obligatoria para servidores Serverless (Vercel) y capas gratuitas
-    enviar_alerta_async(
+    return enviar_alerta_async(
         producto_id, producto_nombre, categoria_nombre, ubicacion, saldo_actual, stock_minimo
     )

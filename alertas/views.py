@@ -1,9 +1,10 @@
 from rest_framework import viewsets, status
+from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.core.mail import send_mail
 from django.conf import settings
-from .models import DestinatarioCorreo, HistorialAlerta
-from .serializers import DestinatarioCorreoSerializer, HistorialAlertaSerializer
+from .models import DestinatarioCorreo, HistorialAlerta, ConfiguracionAlerta
+from .serializers import DestinatarioCorreoSerializer, HistorialAlertaSerializer, ConfiguracionAlertaSerializer
 
 class DestinatarioCorreoViewSet(viewsets.ModelViewSet):
     queryset = DestinatarioCorreo.objects.all()
@@ -55,3 +56,17 @@ class DestinatarioCorreoViewSet(viewsets.ModelViewSet):
 class HistorialAlertaViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = HistorialAlerta.objects.all()
     serializer_class = HistorialAlertaSerializer
+
+class ConfiguracionGlobalView(APIView):
+    def get(self, request):
+        config = ConfiguracionAlerta.get_config()
+        serializer = ConfiguracionAlertaSerializer(config)
+        return Response(serializer.data)
+
+    def patch(self, request):
+        config = ConfiguracionAlerta.get_config()
+        serializer = ConfiguracionAlertaSerializer(config, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

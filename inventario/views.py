@@ -9,8 +9,8 @@ from .models import MovimientoInventario
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from django.db.models.deletion import ProtectedError
-from alertas.utils import disparar_alerta_email # <-- Importación del motor de alertas
-
+from alertas.models import ConfiguracionAlerta
+from alertas.utils import disparar_alerta_email 
 
 class CategoriaViewSet(viewsets.ModelViewSet):
     """
@@ -73,7 +73,6 @@ class ProductoViewSet(viewsets.ModelViewSet):
         producto_existente = Producto.objects.filter(nombre__iexact=nombre, categoria_id=categoria_id).first()
         
         if producto_existente:
-            # Enviamos una respuesta con un código de error específico y un mensaje
             # LÓGICA DE REACTIVACIÓN
             if producto_existente.descontinuado:
                 producto_existente.descontinuado = False
@@ -198,6 +197,8 @@ class ProcesarMovimientoView(APIView):
         try:
             with transaction.atomic():
                 movimientos_registrados = []
+                # Variable para rastrear si ALGÚN correo se envió en este bloque
+                alerta_enviada = False
 
                 for item in detalles:
                     try:
@@ -221,29 +222,41 @@ class ProcesarMovimientoView(APIView):
                     # --- LÓGICA DE ALERTA ALT-05 ---
                     requiere_alerta = producto.stock_total <= producto.stock_minimo
                     
+                    estado_notificacion = None
                     if requiere_alerta:
-                        # Determinamos dinámicamente si la alerta fue provocada en Bodega o Vitrina
                         ubicacion_alerta = item.get('origen') if tipo_movimiento_real in [MovimientoInventario.TipoMovimiento.SALIDA, MovimientoInventario.TipoMovimiento.DAÑO, MovimientoInventario.TipoMovimiento.TRASLADO] else item.get('destino')
                         
-                        # transaction.on_commit asegura que el hilo del correo arranque SOLO si no hubo errores en el bloque atomic
-                        # Usamos argumentos por defecto (p_id=producto.id, etc) para blindar el contexto en ciclos for
-                        transaction.on_commit(
-                            lambda p_id=producto.id, p_nom=producto.nombre, c_nom=producto.categoria.nombre, 
-                                   u=ubicacion_alerta, s_act=producto.stock_total, s_min=producto.stock_minimo: 
-                            disparar_alerta_email(p_id, p_nom, c_nom, u, s_act, s_min)
+                        # Disparamos la alerta de manera síncrona para capturar la respuesta real
+                        resultado_envio = disparar_alerta_email(
+                            producto.id, producto.nombre, producto.categoria.nombre, 
+                            ubicacion_alerta, producto.stock_total, producto.stock_minimo
                         )
+                        
+                        if resultado_envio:
+                            alerta_enviada = True
+                            estado_notificacion = "enviada"
+                        elif not ConfiguracionAlerta.get_config().notificaciones_globales_activas:
+                            estado_notificacion = "desactivada"
+                        else:
+                            estado_notificacion = "no_enviada"
                     
                     movimientos_registrados.append({
                         "producto": producto.nombre,
                         "cantidad": movimiento.cantidad,
                         "nuevo_stock_bodega": producto.stock_bodega,
                         "nuevo_stock_vitrina": producto.stock_vitrina,
-                        "requiere_alerta": requiere_alerta
+                        "requiere_alerta": requiere_alerta,
+                        "estado_notificacion": estado_notificacion
                     })
+
+            # --- EVALUACIÓN FINAL DEL MENSAJE PARA REACT ---
+            mensaje_exito = f"Transacción de tipo '{tipo_contexto.upper()}' procesada con éxito."
+            if alerta_enviada:
+                mensaje_exito += " Se ha enviado un correo al destinatario del stock crítico."
 
             return Response({
                 "success": True,
-                "message": f"Transacción de tipo '{tipo_contexto.upper()}' procesada con éxito.",
+                "message": mensaje_exito,
                 "detalles_procesados": movimientos_registrados
             }, status=status.HTTP_201_CREATED)
 
