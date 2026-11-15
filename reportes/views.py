@@ -10,6 +10,7 @@ from .serializers import ReporteExistenciasSerializer
 from django.db.models import F, Case, When, Value, IntegerField
 from seguridad.models import Usuario
 from .serializers import ReporteStockCriticoSerializer
+from django.db.models.functions import Lower
 
 class ProductosSinMovimientoView(APIView):
     authentication_classes = [TokenAuthentication]
@@ -30,7 +31,10 @@ class ProductosSinMovimientoView(APIView):
                 'movimientos__fecha_hora',
                 filter=Q(movimientos__tipo=MovimientoInventario.TipoMovimiento.SALIDA)
     )
-        ).select_related('categoria').order_by('categoria__nombre', 'nombre')
+        ).select_related('categoria').order_by(
+    Lower('categoria__nombre'),
+    Lower('nombre')
+)
 
         resultados = {}
         

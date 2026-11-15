@@ -151,6 +151,25 @@ class MovimientoInventario(models.Model):
                                         f"y no alcanza para {self.cantidad}.")
                     raise ValidationError(mensaje)
 
+        # Validar que un ajuste administrativo no reste más stock del disponible
+        if self.tipo == self.TipoMovimiento.CORRECCION:
+            ubicaciones = {
+                self.Ubicacion.BODEGA: ("Bodega", self.producto.stock_bodega),
+                self.Ubicacion.VITRINA: ("Vitrina", self.producto.stock_vitrina),
+            }
+            if self.origen in ubicaciones and self.destino in ubicaciones:
+                if self.origen == self.destino:
+                    raise ValidationError(
+                        "En una corrección administrativa, el origen y destino deben ser diferentes."
+                    )
+            if self.origen in ubicaciones and self.destino != self.origen:
+                nombre, disponible = ubicaciones[self.origen]
+                if disponible < self.cantidad:
+                    raise ValidationError(
+                        f"Existencias insuficientes para realizar el ajuste. En {nombre} "
+                        f"hay {disponible} unidad(es) y se solicitan {self.cantidad}."
+                    )
+
     def save(self, *args, **kwargs):
         self.full_clean()
 
@@ -183,16 +202,24 @@ class MovimientoInventario(models.Model):
 
         # 4. CORRECCIONES: Permiten ajustar inventarios sumando o restando según se indique en origen/destino
         elif self.tipo == self.TipoMovimiento.CORRECCION:
-            # INV-13: El ajuste administrativo permite tanto sumar como restar a conveniencia
-            # Se asume que el origen/destino indica si incrementa o decrementa la bodega/vitrina
-            if self.destino == self.Ubicacion.BODEGA:
-                self.producto.stock_bodega += self.cantidad
-            elif self.origen == self.Ubicacion.BODEGA:
-                self.producto.stock_bodega -= self.cantidad
-            elif self.destino == self.Ubicacion.VITRINA:
-                self.producto.stock_vitrina += self.cantidad
-            elif self.origen == self.Ubicacion.VITRINA:
-                self.producto.stock_vitrina -= self.cantidad
+            saldos = {
+                self.Ubicacion.BODEGA: "stock_bodega",
+                self.Ubicacion.VITRINA: "stock_vitrina",
+            }
+            if self.origen in saldos:
+                atributo_origen = saldos[self.origen]
+                setattr(
+                    self.producto,
+                    atributo_origen,
+                    getattr(self.producto, atributo_origen) - self.cantidad,
+                )
+            if self.destino in saldos:
+                atributo_destino = saldos[self.destino]
+                setattr(
+                    self.producto,
+                    atributo_destino,
+                    getattr(self.producto, atributo_destino) + self.cantidad,
+                )
 
         # Guarda los nuevos saldos calculados en el producto y luego registra el movimiento histórico
         self.producto.save()

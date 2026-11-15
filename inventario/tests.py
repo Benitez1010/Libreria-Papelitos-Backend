@@ -1,8 +1,56 @@
 from django.test import TestCase
 from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
-from inventario.models import Categoria, Producto
+from inventario.models import Categoria, MovimientoInventario, Producto
+
+
+class CorreccionAdministrativaTestCase(TestCase):
+    def setUp(self):
+        self.categoria = Categoria.objects.create(nombre="ÚTILES")
+        self.producto = Producto.objects.create(
+            nombre="Lápiz",
+            categoria=self.categoria,
+            stock_bodega=100,
+            stock_vitrina=15,
+            stock_minimo=1,
+        )
+        self.usuario = get_user_model().objects.create_user(
+            username="usuario_prueba",
+            password="password-seguro",
+        )
+
+    def crear_correccion(self, cantidad):
+        return MovimientoInventario(
+            producto=self.producto,
+            tipo=MovimientoInventario.TipoMovimiento.CORRECCION,
+            cantidad=cantidad,
+            origen=MovimientoInventario.Ubicacion.VITRINA,
+            destino=MovimientoInventario.Ubicacion.BODEGA,
+            justificacion="Corrección de inventario",
+            usuario=self.usuario,
+        )
+
+    def test_rechaza_traslado_administrativo_mayor_al_stock_de_origen(self):
+        movimiento = self.crear_correccion(20)
+
+        with self.assertRaisesMessage(
+            ValidationError,
+            "Existencias insuficientes para realizar el ajuste. En Vitrina hay 15 unidad(es) y se solicitan 20.",
+        ):
+            movimiento.save()
+
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.stock_vitrina, 15)
+        self.assertEqual(self.producto.stock_bodega, 100)
+
+    def test_correccion_entre_ubicaciones_transfiere_stock(self):
+        self.crear_correccion(10).save()
+
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.stock_vitrina, 5)
+        self.assertEqual(self.producto.stock_bodega, 110)
 
 class CategoriaEliminacionTestCase(TestCase):
     def setUp(self):
