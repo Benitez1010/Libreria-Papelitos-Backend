@@ -9,6 +9,9 @@ __pycache__/
 
 # Entorno local / Editores
 .env
+env/
+env
+.env
 .vscode/
 .idea/
 *.log

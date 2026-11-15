@@ -2,7 +2,8 @@ from django.urls import path
 from .views import (
     LoginView, UsuarioMeView, UsuarioListView, 
     DesactivarUsuarioView, ReactivarUsuarioView, RegistroUsuarioView,CambiarRolView,
-    SolicitarRecuperacionView, ConfirmarRecuperacionView, BitacoraBloqueoView
+    SolicitarRecuperacionView, ConfirmarRecuperacionView, BitacoraBloqueoView,
+    EditarUsuarioView
 )
 
 # Definición de rutas internas para el módulo de Autenticación y Usuarios
@@ -18,6 +19,8 @@ urlpatterns = [
     path('usuarios/<int:pk>/reactivar/', ReactivarUsuarioView.as_view(), name='usuarios-reactivar'),
     # Ruta exclusiva para que el administrador registre nuevas cuentas en el sistema
     path('usuarios/registrar/', RegistroUsuarioView.as_view(), name='usuarios-registrar'),
+    # Ruta para que el administrador edite los datos personales de un usuario
+    path('usuarios/<int:pk>/editar/', EditarUsuarioView.as_view(), name='usuarios-editar'),
     # Ruta para modificar el rol operativo de un usuario y actualizar sus accesos
     path('usuarios/<int:pk>/cambiar-rol/', CambiarRolView.as_view(), name='usuarios-cambiar-rol'), 
     # Rutas públicas para la recuperación de contraseña por correo electrónico

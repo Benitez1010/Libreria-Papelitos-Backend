@@ -34,3 +34,25 @@ class HistorialAlerta(models.Model):
     def __str__(self):
         estado_envio = "Enviado" if self.notificacion_enviada else "Fallo Técnico"
         return f"Alerta: {self.producto.nombre} - Saldo: {self.saldo_momento} ({estado_envio})"
+    
+class ConfiguracionAlerta(models.Model):
+    notificaciones_globales_activas = models.BooleanField(
+        default=True, 
+        help_text="Interruptor maestro para encender/apagar todas las alertas por correo del sistema."
+    )
+
+    class Meta:
+        db_table = 'configuracion_alertas'
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # Forzamos a que siempre sea la fila con ID 1 (Patrón Singleton)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_config(cls):
+        # Devuelve la configuración actual o crea una por defecto si no existe
+        config, created = cls.objects.get_or_create(pk=1)
+        return config
+
+    def __str__(self):
+        return f"Configuración Global (Activa: {self.notificaciones_globales_activas})"

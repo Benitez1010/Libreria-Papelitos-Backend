@@ -8,7 +8,9 @@ from rest_framework import permissions
 from .models import MovimientoInventario
 from django.db import transaction
 from django.core.exceptions import ValidationError
-
+from django.db.models.deletion import ProtectedError
+from alertas.models import ConfiguracionAlerta
+from alertas.utils import disparar_alerta_email 
 
 class CategoriaViewSet(viewsets.ModelViewSet):
     """
@@ -54,7 +56,7 @@ class ProductoViewSet(viewsets.ModelViewSet):
     Controlador CRUD completo para el catálogo de productos.
     Incluye lógica de asistencia para inventario inicial y alertas preventivas de duplicados.
     """
-    queryset = Producto.objects.all()
+    queryset = Producto.objects.filter(descontinuado=False).order_by('nombre')
     serializer_class = ProductoSerializer
 
     def create(self, request, *args, **kwargs):
@@ -71,13 +73,28 @@ class ProductoViewSet(viewsets.ModelViewSet):
         producto_existente = Producto.objects.filter(nombre__iexact=nombre, categoria_id=categoria_id).first()
         
         if producto_existente:
-            # Enviamos una respuesta con un código de error específico y un mensaje
-            return Response({
-                "success": False,
-                "error_type": "PRODUCTO_DUPLICADO",
-                "message": f"El producto '{nombre}' ya existe en esta categoría. ¿Deseas ir a actualizar su stock?",
-                "producto_id": producto_existente.id
-            }, status=status.HTTP_400_BAD_REQUEST)
+            # LÓGICA DE REACTIVACIÓN
+            if producto_existente.descontinuado:
+                producto_existente.descontinuado = False
+                if 'cantidad_inicial' in data:
+                    producto_existente.stock_bodega += int(data['cantidad_inicial'])
+                if 'stock_minimo' in data:
+                    producto_existente.stock_minimo = int(data['stock_minimo'])
+                producto_existente.save()
+                
+                serializer = self.get_serializer(producto_existente)
+                return Response({
+                    "success": True,
+                    "message": f"El producto '{nombre}' estaba descontinuado y ha sido reactivado con éxito.",
+                    "data": serializer.data
+                }, status=status.HTTP_201_CREATED)
+            else:
+                return Response({
+                    "success": False,
+                    "error_type": "PRODUCTO_DUPLICADO",
+                    "message": f"El producto '{nombre}' ya existe en esta categoría. ¿Deseas ir a actualizar su stock?",
+                    "producto_id": producto_existente.id
+                }, status=status.HTTP_400_BAD_REQUEST)
 
         # Si no existe, procedemos con el flujo normal
         serializer = self.get_serializer(data=data)
@@ -96,65 +113,64 @@ class ProductoViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, *args, **kwargs):
-        """INV-09: Edición de producto con validación de nombre duplicado."""
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
-        
-        nombre = request.data.get('nombre', instance.nombre).strip()
-        categoria_id = request.data.get('categoria', instance.categoria_id)
-
-        # Validamos si ya existe otro producto con el mismo nombre y categoría
-        existe_duplicado = Producto.objects.filter(
-            nombre__iexact=nombre, 
-            categoria_id=categoria_id
-        ).exclude(id=instance.id).exists()
-
-        if existe_duplicado:
-            return Response({
-                "success": False,
-                "error_type": "PRODUCTO_DUPLICADO",
-                "nombre": [f"El producto '{nombre}' ya existe en esta categoría."],
-                "message": f"El producto '{nombre}' ya existe en esta categoría."
-            }, status=status.HTTP_400_BAD_REQUEST)
-
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         if serializer.is_valid():
             serializer.save()
             return Response({
-                "success": True,
-                "message": "Producto actualizado con éxito.",
-                "data": serializer.data
-            }, status=status.HTTP_200_OK)
-
+            "success": True,
+            "message": "Producto actualizado con éxito.",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
         return Response({
             "success": False,
             "error_type": "VALIDATION_ERROR",
             "errors": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
+    def destroy(self, request, *args, **kwargs):
+        instancia = self.get_object()
+        try:
+            instancia.delete()
+            return Response({
+                "success": True,
+                "message": "Producto eliminado con éxito."
+            }, status=status.HTTP_200_OK)
+        except ValidationError as e:
+            mensaje = e.messages[0] if hasattr(e, 'messages') else str(e)
+            return Response({
+                "success": False,
+                "message": mensaje
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except ProtectedError:
+            instancia.descontinuado = True
+            instancia.save()
+            return Response({
+                "success": True,
+                "message": "El producto tiene historial registrado. Fue descontinuado lógicamente y oculto del catálogo."
+            }, status=status.HTTP_200_OK)
+
 class ProcesarMovimientoView(APIView):
     """
     Vista transaccional que procesa listas de productos facturados o trasladados desde React.
     Garantiza consistencia en bloque, aplicando la regla de: 'O se guardan todos o ninguno'.
     """
-    # Exige que las peticiones frontend incluyan el Token de sesión en las cabeceras HTTP
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
         data = request.data
-        tipo_contexto = data.get('tipo_contexto') # Define la operación: venta, entrada, traslado, daño, correccion
+        tipo_contexto = data.get('tipo_contexto')
         justificacion = data.get('justificacion', '').strip()
-        detalles = data.get('detalles', []) # Arreglo de productos elegidos en React
+        detalles = data.get('detalles', [])
 
-        # Valida que la lista de productos no venga vacía
         if not detalles:
             return Response({
                 "success": False,
                 "message": "Debe seleccionar al menos un producto para registrar la transacción."
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Mapeo del contexto del frontend al Tipo de Movimiento real del backend
         mapeo_tipos = {
             'venta': MovimientoInventario.TipoMovimiento.SALIDA,
             'entrada': MovimientoInventario.TipoMovimiento.ENTRADA,
@@ -179,10 +195,10 @@ class ProcesarMovimientoView(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # --- PROTECCIÓN EN BLOQUE ATÓMICO ---
-            # Si ocurre un error en el producto número 10, se cancelan los 9 anteriores automáticamente
             with transaction.atomic():
                 movimientos_registrados = []
+                # Variable para rastrear si ALGÚN correo se envió en este bloque
+                alerta_enviada = False
 
                 for item in detalles:
                     try:
@@ -190,7 +206,6 @@ class ProcesarMovimientoView(APIView):
                     except Producto.DoesNotExist:
                         raise ValidationError(f"El producto con ID {item.get('producto_id')} no existe en el catálogo.")
 
-                    # Mapea las variables estructuradas desde el formulario dinámico de React hacia el Modelo
                     movimiento = MovimientoInventario(
                         producto=producto,
                         tipo=tipo_movimiento_real,
@@ -198,30 +213,54 @@ class ProcesarMovimientoView(APIView):
                         origen=item.get('origen'),
                         destino=item.get('destino'),
                         justificacion=justificacion,
-                        usuario=request.user # Django extrae de forma segura el usuario del Token
+                        usuario=request.user 
                     )
                     
-                    # Al invocar el save() se calculan los nuevos stocks y se verifican restricciones de inventario negativo
+                    # Al guardar se calculan los nuevos saldos
                     movimiento.save()
                     
-                    # Almacena de manera temporal la información para construir el JSON informativo de respuesta
+                    # --- LÓGICA DE ALERTA ALT-05 ---
+                    requiere_alerta = producto.stock_total <= producto.stock_minimo
+                    
+                    estado_notificacion = None
+                    if requiere_alerta:
+                        ubicacion_alerta = item.get('origen') if tipo_movimiento_real in [MovimientoInventario.TipoMovimiento.SALIDA, MovimientoInventario.TipoMovimiento.DAÑO, MovimientoInventario.TipoMovimiento.TRASLADO] else item.get('destino')
+                        
+                        # Disparamos la alerta de manera síncrona para capturar la respuesta real
+                        resultado_envio = disparar_alerta_email(
+                            producto.id, producto.nombre, producto.categoria.nombre, 
+                            ubicacion_alerta, producto.stock_total, producto.stock_minimo
+                        )
+                        
+                        if resultado_envio:
+                            alerta_enviada = True
+                            estado_notificacion = "enviada"
+                        elif not ConfiguracionAlerta.get_config().notificaciones_globales_activas:
+                            estado_notificacion = "desactivada"
+                        else:
+                            estado_notificacion = "no_enviada"
+                    
                     movimientos_registrados.append({
                         "producto": producto.nombre,
                         "cantidad": movimiento.cantidad,
                         "nuevo_stock_bodega": producto.stock_bodega,
                         "nuevo_stock_vitrina": producto.stock_vitrina,
-                        "requiere_alerta": producto.stock_total <= producto.stock_minimo
+                        "requiere_alerta": requiere_alerta,
+                        "estado_notificacion": estado_notificacion
                     })
 
-            # Si el bucle termina con éxito, se confirma la transacción en la base de datos
+            # --- EVALUACIÓN FINAL DEL MENSAJE PARA REACT ---
+            mensaje_exito = f"Transacción de tipo '{tipo_contexto.upper()}' procesada con éxito."
+            if alerta_enviada:
+                mensaje_exito += " Se ha enviado un correo al destinatario del stock crítico."
+
             return Response({
                 "success": True,
-                "message": f"Transacción de tipo '{tipo_contexto.upper()}' procesada con éxito.",
+                "message": mensaje_exito,
                 "detalles_procesados": movimientos_registrados
             }, status=status.HTTP_201_CREATED)
 
         except ValidationError as e:
-            # Si el error viene agrupado en '__all__' por el método clean() del modelo, extraemos el texto limpio
             mensaje_limpio = str(e)
             if hasattr(e, 'message_dict') and '__all__' in e.message_dict:
                 mensaje_limpio = e.message_dict['__all__'][0]
@@ -231,11 +270,10 @@ class ProcesarMovimientoView(APIView):
             return Response({
                 "success": False,
                 "error_type": "BUSINESS_RULE_ERROR",
-                "message": mensaje_limpio # Enviará "Existencias insuficientes para realizar la operación."
+                "message": mensaje_limpio 
             }, status=status.HTTP_400_BAD_REQUEST)
             
         except Exception as e:
-            # Control ante fallas inesperadas de infraestructura o base de datos
             return Response({
                 "success": False,
                 "message": f"Fallo crítico en el servidor: {str(e)}"

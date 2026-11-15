@@ -211,4 +211,57 @@ class ConfirmarRecuperacionSerializer(serializers.Serializer):
             validate_password(value)
         except DjangoValidationError as e:
             raise serializers.ValidationError(list(e.messages))
-        return value 
+        return value
+
+    
+
+class EdicionUsuarioSerializer(serializers.ModelSerializer):
+    """
+    Serializer dedicado a la edición de los datos personales de un usuario existente.
+    Valida la unicidad excluyendo el registro que se está editando.
+    """
+    username = serializers.CharField(
+        required=True,
+        max_length=150,
+        validators=[],
+        error_messages={
+            'required': 'Debe proporcionar un nombre de usuario.',
+            'blank': 'Debe proporcionar un nombre de usuario.',
+            'max_length': 'El nombre de usuario no puede superar los 150 caracteres.'
+        }
+    )
+    nombre_completo = serializers.CharField(
+        source='first_name',
+        required=True,
+        error_messages={
+            'required': 'Debe proporcionar el nombre completo.',
+            'blank': 'Debe proporcionar el nombre completo.'
+        }
+    )
+    email = serializers.EmailField(
+        required=True,
+        error_messages={
+            'required': 'Debe proporcionar un correo electrónico.',
+            'blank': 'Debe proporcionar un correo electrónico.',
+            'invalid': 'Ingrese un correo electrónico válido.'
+        }
+    )
+
+    class Meta:
+        model = Usuario
+        fields = ['username', 'nombre_completo', 'email']
+
+    def validate_username(self, value):
+        if Usuario.objects.filter(username=value).exclude(pk=self.instance.pk).exists():
+            raise serializers.ValidationError('Este nombre de usuario ya existe.')
+        return value
+
+    def validate_nombre_completo(self, value):
+        if Usuario.objects.filter(first_name=value).exclude(pk=self.instance.pk).exists():
+            raise serializers.ValidationError('Este nombre completo ya está registrado.')
+        return value
+
+    def validate_email(self, value):
+        if Usuario.objects.filter(email__iexact=value).exclude(pk=self.instance.pk).exists():
+            raise serializers.ValidationError('Este correo electrónico ya está registrado.')
+        return value

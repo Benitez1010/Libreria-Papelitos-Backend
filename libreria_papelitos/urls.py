@@ -27,4 +27,5 @@ urlpatterns = [
     path('api/', include('inventario.urls')), # Endpoints del módulo de Inventario (productos, categorías, transacciones de stock, etc.)
     path('api/', include('seguridad.urls')),  # Endpoints del módulo de Seguridad (autenticación, gestión de usuarios, etc.)
     path('api/', include('alertas.urls')),    # Endpoints del módulo de Alertas (gestión de destinatarios de correo para notificaciones)
+    path('api/', include('reportes.urls')),  
 ]

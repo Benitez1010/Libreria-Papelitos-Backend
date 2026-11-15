@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -6,7 +8,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
 from .serializers import (
     LoginSerializer, UsuarioSerializer, RegistroUsuarioSerializer,
-    SolicitudRecuperacionSerializer, ConfirmarRecuperacionSerializer
+    SolicitudRecuperacionSerializer, ConfirmarRecuperacionSerializer,
+    EdicionUsuarioSerializer
 )
 from .models import Usuario, BitacoraSeguridad
 from django.shortcuts import get_object_or_404 
@@ -74,6 +77,12 @@ class DesactivarUsuarioView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
+        if request.user.rol != Usuario.Roles.ADMINISTRADOR:
+            return Response(
+                {'error': 'No tienes permisos para realizar esta acción.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         try:
             usuario = Usuario.objects.get(pk=pk)
         except Usuario.DoesNotExist:
@@ -82,10 +91,6 @@ class DesactivarUsuarioView(APIView):
         # Candado 1: Evita que el usuario en sesión apague su propio acceso
         if request.user.id == usuario.id:
             return Response({'error': 'No puede desactivar su propia cuenta.'}, status=status.HTTP_403_FORBIDDEN)
-
-        # Candado 2: Protege la jerarquía evitando que un administrador desactive a otro administrador
-        if usuario.rol == Usuario.Roles.ADMINISTRADOR and request.user.id != usuario.id:
-            return Response({'error': 'No puede desactivar a otro administrador.'}, status=status.HTTP_403_FORBIDDEN)
 
         usuario.is_active = False
         usuario.save()
@@ -134,6 +139,31 @@ class RegistroUsuarioView(APIView):
                 'mensaje': 'Usuario creado con éxito.',
                 'usuario': UsuarioSerializer(usuario).data
             }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class EditarUsuarioView(APIView):
+    """
+    Vista exclusiva para que el administrador actualice los datos personales
+    de un usuario: nombre de usuario, nombre completo y correo electrónico.
+    No modifica el rol, el área ni el estado de la cuenta.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        if request.user.rol != Usuario.Roles.ADMINISTRADOR:
+            return Response(
+                {'error': 'No tienes permisos para realizar esta acción.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        usuario = get_object_or_404(Usuario, pk=pk)
+        serializer = EdicionUsuarioSerializer(usuario, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'mensaje': 'Datos del usuario actualizados correctamente.',
+                'usuario': UsuarioSerializer(usuario).data
+            }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class CambiarRolView(APIView):
@@ -265,14 +295,17 @@ class SolicitarRecuperacionView(APIView):
 </div>
 """
 
-            send_mail(
-                subject='Recuperación de contraseña - Librería Papelitos',
-                message=cuerpo,
-                from_email=settings.EMAIL_HOST_USER,
-                recipient_list=[usuario.email],
-                html_message=cuerpo_html,
-                fail_silently=True
-            )
+            try:
+                send_mail(
+                    subject='Recuperación de contraseña - Librería Papelitos',
+                    message=cuerpo,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[usuario.email],
+                    html_message=cuerpo_html,
+                    fail_silently=False,
+                )
+            except Exception:
+                logger.exception("Error enviando correo de recuperación")
 
         return Response({'mensaje': mensaje_generico}, status=status.HTTP_200_OK)
 
