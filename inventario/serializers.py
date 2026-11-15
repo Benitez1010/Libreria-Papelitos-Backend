@@ -82,19 +82,27 @@ class ProductoSerializer(serializers.ModelSerializer):
                 })
 
         return data
-
+    
 class MovimientoInventarioSerializer(serializers.ModelSerializer):
     """
     Controla las transacciones de inventario y la trazabilidad (SEG-07).
-    Expone el responsable y valida la justificación en ajustes.
+    Expone el nombre completo del responsable y valida la justificación en ajustes.
     """
     producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
     tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
     origen_display = serializers.CharField(source='get_origen_display', read_only=True)
     destino_display = serializers.CharField(source='get_destino_display', read_only=True)
-    
-    # Campo obligatorio para los reportes de historial (SEG-07)
-    responsable = serializers.ReadOnlyField(source='usuario.username')
+
+    responsable = serializers.SerializerMethodField()
+
+    def get_responsable(self, obj):
+        """Devuelve el nombre completo o el nombre de usuario como respaldo."""
+        usuario = obj.usuario
+        if usuario is None:
+            return 'Sin asignar'
+
+        nombre_completo = (usuario.first_name or '').strip()
+        return nombre_completo or usuario.username
 
     class Meta:
         model = MovimientoInventario
